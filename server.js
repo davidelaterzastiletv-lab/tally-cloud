@@ -65,6 +65,11 @@ io.on('connection', (socket) => {
         // Send current state immediately
         socket.emit('tallyUpdate', currentTally);
 
+        // FIX: Se abbiamo già la configurazione in memoria, mandiamola subito al nuovo arrivato!
+        if (currentConfig) {
+            socket.emit('configUpdate', currentConfig);
+        }
+
         // WebRTC Signaling: Operator -> Bridge (Director)
         socket.on('webrtc-offer', (data) => {
             if (bridgeSocket) bridgeSocket.emit('webrtc-offer', data);
