@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Regia - vMix Tally Pro</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .back-link {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 0.8rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            transition: color 0.2s;
+        }
+
+        .back-link:hover {
+            color: white;
+        }
+
+        /* Override for horizontal layout settings */
+        .config-compact-row {
+            display: flex;
+            gap: 1.5rem;
+            align-items: flex-start;
+        }
+
+        .config-compact-row>div {
+            flex: 1;
+        }
+
+        .preview-active {
+            border-color: var(--program-red) !important;
+            box-shadow: 0 0 20px var(--program-glow) !important;
+        }
+    </style>
+</head>
+
+<body class="dashboard-body">
+    <!-- Sidebar: Elenco Operatori -->
+    <aside class="operator-sidebar">
+        <div class="sidebar-header">
+            <div>
+                <a href="index.html" class="back-link">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M19 12H5M12 19l-7-7 7-7" />
+                    </svg>
+                    HOME
+                </a>
+                <h2 style="margin-top: 0.5rem;">Operatori Connessi</h2>
+            </div>
+            <div class="status-pill">
+                <div class="dot red" id="vmixDot"></div>
+                <span id="vmixText" style="font-size: 0.7rem;">vMix Off</span>
+            </div>
+        </div>
+
+        <div id="cameraGrid" style="display: flex; flex-direction: column; gap: 0.5rem;">
+            <!-- Rendered via JavaScript -->
+        </div>
+
+        <div class="control-section" style="margin-top: auto; padding: 1rem;">
+            <div class="control-section-header" style="margin-bottom: 0.5rem;">
+                <h3>Nuovo Operatore</h3>
+            </div>
+            <div style="display: flex; gap: 0.5rem;">
+                <input type="text" id="newCamName" placeholder="Nome" style="padding: 0.4rem; font-size: 0.8rem;">
+                <input type="number" id="newCamInput" placeholder="In"
+                    style="max-width: 50px; padding: 0.4rem; font-size: 0.8rem;">
+                <button class="btn-add" onclick="addCamera()" style="padding: 0.4rem 0.8rem;">+</button>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Panel: Preview e Controlli Globali -->
+    <main class="main-control-panel">
+        <!-- Preview Window -->
+        <div class="preview-window" id="previewContainer">
+            <video id="previewVideo" autoplay playsinline muted></video>
+            <div class="preview-label" id="previewModeLabel">STANDBY</div>
+            <div style="position: absolute; bottom: 1rem; right: 1rem; display: flex; gap: 1rem;">
+                <div class="status-pill" style="background: rgba(0,0,0,0.8);">
+                    <span id="previewBitrateLabel"
+                        style="font-family: monospace; font-size: 0.7rem; color: var(--accent);">0.0 Mbps</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Global Controls Grid -->
+        <div class="config-compact-row">
+            <!-- Intercom Global -->
+            <div class="control-section">
+                <div class="control-section-header">
+                    <h3>Intercom Master</h3>
+                    <div class="vu-meter-container" style="width: 150px; margin: 0;">
+                        <div class="vu-meter-bar" id="vuBar"></div>
+                        <div class="vu-meter-peak" id="vuPeak"></div>
+                    </div>
+                </div>
+                <div class="device-select-container">
+                    <label class="intercom-label">Microfono Regia</label>
+                    <select id="audioSource" onchange="initAudio()"></select>
+                    <button id="talkAllBtn" class="btn-talk" onclick="toggleTalkAll()" style="margin-top: 1rem;">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                            <circle cx="9" cy="7" r="4" />
+                            <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                            <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                        </svg>
+                        TALK TO ALL
+                    </button>
+                </div>
+            </div>
+
+            <!-- Ritorno Program -->
+            <div class="control-section" style="flex: 1.5;">
+                <div class="control-section-header">
+                    <h3>Ritorno Programma</h3>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <button id="sendVideoBtn" onclick="toggleReturnStream('video')" class="action-icon-btn"
+                            data-tooltip="Solo Video">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path d="M23 7l-7 5 7 5V7z" />
+                                <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+                            </svg>
+                        </button>
+                        <button id="sendAudioBtn" onclick="toggleReturnStream('audio')" class="action-icon-btn"
+                            data-tooltip="Solo Audio PGM">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path d="M11 5L6 9H2v6h4l5 4V5z" />
+                                <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" />
+                            </svg>
+                        </button>
+                        <button id="sendAllBtn" onclick="toggleReturnStream('both')" class="btn-talk"
+                            style="width: auto; padding: 0.5rem 1rem; font-size: 0.7rem;">
+                            LIVE PGM + AUDIO
+                        </button>
+                    </div>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                    <div>
+                        <label class="intercom-label">Input Video</label>
+                        <select id="videoReturnSource" onchange="refreshReturnDevices()"></select>
+                    </div>
+                    <div>
+                        <label class="intercom-label">Input Audio</label>
+                        <select id="audioReturnSource" onchange="refreshReturnDevices()"></select>
+                    </div>
+                    <div>
+                        <label class="intercom-label">Bitrate Massimo</label>
+                        <select id="videoBitrate">
+                            <option value="0.5">0.5 Mbps (Low)</option>
+                            <option value="1.0" selected>1.0 Mbps (Med)</option>
+                            <option value="1.5">1.5 Mbps (High)</option>
+                            <option value="2.0">2.0 Mbps (Ultra)</option>
+                        </select>
+                    </div>
+                    <div style="display: flex; flex-direction: column; justify-content: flex-end;">
+                        <div style="display: flex; gap: 0.5rem; align-items: center;">
+                            <input type="text" id="vmixIp" placeholder="vMix IP:8088"
+                                style="padding: 0.4rem; font-size: 0.8rem;">
+                            <button onclick="updateConfig()"
+                                style="padding: 0.4rem 0.8rem; font-size: 0.7rem;">SAVE</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sezione Futura -->
+        <div class="control-section"
+            style="border-style: dashed; opacity: 0.5; display: flex; align-items: center; justify-content: center; height: 100px;">
+            <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: 800; letter-spacing: 0.2em;">SPAZIO
+                PER ESPANSIONI FUTURE</span>
+        </div>
+    </main>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        let cameras = [];
+        let currentStatuses = {};
+
+        socket.on('configUpdate', (data) => {
+            cameras = data.cameras;
+            const ipInput = document.getElementById('vmixIp');
+            if (ipInput.value === '') {
+                ipInput.value = data.vmixIp || '';
+            }
+
+            // Applica impostazioni memorizzate
+            if (data.directorSettings) {
+                const s = data.directorSettings;
+                if (s.videoBitrate) document.getElementById('videoBitrate').value = s.videoBitrate;
+                // Le sorgenti verranno applicate dopo che getDevices avrà popolato i select
+                window._pendingSettings = s;
+            }
+
+            renderCameras();
+        });
+
+        socket.on('vmixStatus', (data) => {
+            const dot = document.getElementById('vmixDot');
+            const text = document.getElementById('vmixText');
+            if (data.connected) {
+                dot.className = 'dot green';
+                text.textContent = 'vMix Online';
+            } else {
+                dot.className = 'dot red';
+                text.textContent = 'vMix Offline';
+            }
+        });
+
+        socket.on('tallyUpdate', (tallyStates) => {
+            tallyStates.forEach(state => {
+                currentStatuses[state.id] = state.status;
+                const indicator = document.querySelector(`#camera-${state.id} .status-indicator`);
+                if (indicator) {
+                    indicator.className = 'status-indicator ' + state.status;
+                }
+            });
+        });
+
+        async function updateConfig() {
+            const ip = document.getElementById('vmixIp').value;
+            const settings = {
+                audioSource: document.getElementById('audioSource').value,
+                videoReturnSource: document.getElementById('videoReturnSource').value,
+                audioReturnSource: document.getElementById('audioReturnSource').value,
+                videoBitrate: document.getElementById('videoBitrate').value
+            };
+
+            await fetch('/api/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ip, newCameras: cameras, settings })
+            });
+        }
+
+        function renderCameras() {
+            const grid = document.getElementById('cameraGrid');
+            grid.innerHTML = '';
+
+            cameras.forEach(cam => {
+                const row = document.createElement('div');
+                row.className = 'camera-row';
+                row.id = `camera-${cam.id}`;
+
+                const url = `${window.location.origin}/operator.html?id=${cam.id}`;
+                const status = currentStatuses[cam.id] || 'off';
+
+                row.innerHTML = `
+                    <div class="status-indicator ${status}"></div>
+                    <div class="cam-info">
+                        <span class="cam-name">${cam.name}</span>
+                        <span class="cam-input-badge">INPUT ${cam.inputNumber}</span>
+                    </div>
+                    <div class="row-actions">
+                        <button id="talkBtn-${cam.id}" class="action-icon-btn btn-talk" onclick="toggleTalk(${cam.id})" data-tooltip="Parla con operatore">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
+                        </button>
+                        <a href="${url}" target="_blank" class="action-icon-btn" data-tooltip="Apri Link Tally">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                        </a>
+                        <button class="action-icon-btn" onclick="promptRename(${cam.id}, '${cam.name}')" data-tooltip="Rinomina">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                        </button>
+                        <button class="action-icon-btn" onclick="removeCamera(${cam.id})" data-tooltip="Elimina" style="color: #ef4444;">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                        </button>
+                    </div>
+                `;
+                grid.appendChild(row);
+            });
+        }
+
+        function promptRename(id, oldName) {
+            const newName = prompt("Inserisci nuovo nome per la camera:", oldName);
+            if (newName && newName !== oldName) {
+                renameCamera(id, newName);
+            }
+        }
+
+        async function addCamera() {
+            const nameI = document.getElementById('newCamName');
+            const inputI = document.getElementById('newCamInput');
+            const name = nameI.value || `Cam ${cameras.length + 1}`;
+            const inputNum = parseInt(inputI.value);
+            if (isNaN(inputNum)) return alert('Inserisci un numero di input');
+            cameras.push({ id: Date.now(), name, inputNumber: inputNum });
+            await updateConfig();
+            nameI.value = ''; inputI.value = '';
+        }
+
+        async function removeCamera(id) {
+            if (confirm("Eliminare questo operatore?")) {
+                cameras = cameras.filter(c => c.id !== id);
+                await updateConfig();
+            }
+        }
+
+        async function renameCamera(id, newName) {
+            const cam = cameras.find(c => c.id === id);
+            if (cam) cam.name = newName;
+            await updateConfig();
+        }
+
+        // --- WEBRTC LOGIC ---
+        let currentStream = null;
+        let returnStream = null;
+        const activePeerConnections = {};
+        const operatorAudioElements = {};
+        const activeIntercomIds = new Set();
+        let isSendingVideo = false;
+        let isSendingAudio = false;
+
+        const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+
+        async function getDevices() {
+            try {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const audioSelect = document.getElementById('audioSource');
+                const videoReturnSelect = document.getElementById('videoReturnSource');
+                const audioReturnSelect = document.getElementById('audioReturnSource');
+
+                if (audioSelect) audioSelect.innerHTML = '<option value="">Seleziona Microfono...</option>';
+                if (videoReturnSelect) videoReturnSelect.innerHTML = '<option value="">Disattivo</option>';
+                if (audioReturnSelect) audioReturnSelect.innerHTML = '<option value="">Disattivo</option>';
+
+                devices.forEach(d => {
+                    const opt = document.createElement('option');
+                    opt.value = d.deviceId;
+                    if (d.kind === 'audioinput') {
+                        opt.text = d.label || `Mic ${audioSelect.children.length}`;
+                        audioSelect.appendChild(opt.cloneNode(true));
+                        audioReturnSelect.appendChild(opt.cloneNode(true));
+                    } else if (d.kind === 'videoinput') {
+                        opt.text = d.label || `Camera ${videoReturnSelect.children.length}`;
+                        videoReturnSelect.appendChild(opt);
+                    }
+                });
+
+                // Applica impostazioni se presenti
+                if (window._pendingSettings) {
+                    const s = window._pendingSettings;
+                    if (s.audioSource) audioSelect.value = s.audioSource;
+                    if (s.videoReturnSource) videoReturnSelect.value = s.videoReturnSource;
+                    if (s.audioReturnSource) audioReturnSelect.value = s.audioReturnSource;
+                    delete window._pendingSettings;
+
+                    // Se c'è un audioSource salvato, inizializzalo
+                    if (audioSelect.value) initAudio();
+                }
+            } catch (err) { console.error(err); }
+        }
+
+        async function initAudio() {
+            const deviceId = document.getElementById('audioSource').value;
+            if (!deviceId) return;
+            if (currentStream) currentStream.getTracks().forEach(t => t.stop());
+            try {
+                currentStream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        deviceId: { exact: deviceId },
+                        echoCancellation: true,
+                        noiseSuppression: true
+                    }
+                });
+                console.log("Microfono pronto.");
+                setupVUMeter(currentStream);
+
+                // Forza la sincronizzazione di tutti i canali per preparare il terreno
+                cameras.forEach(cam => syncOperatorTracks(cam.id));
+            } catch (err) { alert(err.message); }
+        }
+
+        let audioContext, analyser, dataArray;
+        function setupVUMeter(stream) {
+            if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            analyser = audioContext.createAnalyser();
+            audioContext.createMediaStreamSource(stream).connect(analyser);
+            dataArray = new Uint8Array(analyser.frequencyBinCount);
+            drawVU();
+        }
+
+        function drawVU() {
+            requestAnimationFrame(drawVU);
+            analyser.getByteFrequencyData(dataArray);
+            let sum = 0;
+            for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
+            let vol = (sum / dataArray.length / 128) * 100;
+            document.getElementById('vuBar').style.width = Math.min(vol, 100) + '%';
+        }
+
+        function getOrCreatePC(targetId) {
+            if (activePeerConnections[targetId]) return activePeerConnections[targetId];
+            const pc = new RTCPeerConnection(rtcConfig);
+            activePeerConnections[targetId] = pc;
+            if (!operatorAudioElements[targetId]) {
+                operatorAudioElements[targetId] = new Audio();
+                operatorAudioElements[targetId].autoplay = true;
+            }
+            pc.ontrack = (e) => operatorAudioElements[targetId].srcObject = e.streams[0];
+            pc.onicecandidate = (e) => e.candidate && socket.emit('webrtc-ice', { target: targetId, candidate: e.candidate });
+            return pc;
+        }
+
+        async function syncOperatorTracks(targetId) {
+            const pc = getOrCreatePC(targetId);
+            const senders = pc.getSenders();
+            const micTrack = currentStream ? currentStream.getAudioTracks()[0] : null;
+            const micSender = senders.find(s => s.track && s.track.kind === 'audio' && s.track.label === micTrack?.label);
+
+            if (activeIntercomIds.has(targetId) && micTrack) {
+                if (!micSender) pc.addTrack(micTrack, currentStream);
+            } else if (micSender) {
+                // Invece di rimuovere il track totalmente (che chiude il media stream sul ricevente), 
+                // lo lasciamo o lo gestiamo se vogliamo proprio 'chiudere' il talk.
+                // Per ora rimuoviamo per mantenere la logica esistente ma assicuriamoci di rinegoziare.
+                pc.removeTrack(micSender);
+            }
+
+            const returnTracks = returnStream ? returnStream.getTracks() : [];
+            returnTracks.forEach(t => {
+                if (!senders.find(s => s.track === t)) {
+                    const sender = pc.addTrack(t, returnStream);
+                    if (t.kind === 'video') {
+                        const br = parseFloat(document.getElementById('videoBitrate').value) * 1000000;
+                        const p = sender.getParameters();
+                        if (!p.encodings) p.encodings = [{}];
+                        p.encodings[0].maxBitrate = br;
+                        sender.setParameters(p);
+                    }
+                }
+            });
+
+            senders.forEach(s => {
+                if (s.track && s.track !== micTrack && !returnTracks.includes(s.track)) pc.removeTrack(s);
+            });
+
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            socket.emit('webrtc-offer', { target: targetId, offer: offer });
+
+            const btn = document.getElementById(`talkBtn-${targetId}`);
+            if (btn) activeIntercomIds.has(targetId) ? btn.classList.add('active') : btn.classList.remove('active');
+
+            // Invia segnale all'operatore per il ducking e il feedback visivo
+            socket.emit('intercomToggle', { target: targetId, active: activeIntercomIds.has(targetId) });
+
+            updateTalkAllButtonState();
+        }
+
+        async function toggleTalk(id) {
+            activeIntercomIds.has(id) ? activeIntercomIds.delete(id) : activeIntercomIds.add(id);
+            syncOperatorTracks(id);
+        }
+
+        async function toggleTalkAll() {
+            const all = activeIntercomIds.size === cameras.length;
+            cameras.forEach(c => {
+                all ? activeIntercomIds.delete(c.id) : activeIntercomIds.add(c.id);
+                syncOperatorTracks(c.id);
+            });
+        }
+
+        function updateTalkAllButtonState() {
+            const btn = document.getElementById('talkAllBtn');
+            const all = activeIntercomIds.size === cameras.length;
+            if (btn) btn.classList.toggle('active', all && cameras.length > 0);
+        }
+
+        async function toggleReturnStream(mode) {
+            if ((mode === 'video' && isSendingVideo && !isSendingAudio) ||
+                (mode === 'audio' && isSendingAudio && !isSendingVideo) ||
+                (mode === 'both' && isSendingVideo && isSendingAudio)) {
+                return stopReturnStream();
+            }
+
+            if (returnStream) returnStream.getTracks().forEach(t => t.stop());
+
+            try {
+                const vidId = document.getElementById('videoReturnSource').value;
+                const audId = document.getElementById('audioReturnSource').value;
+                const constraints = {
+                    video: (mode !== 'audio' && vidId) ? { deviceId: { exact: vidId }, width: 1280, height: 720 } : false,
+                    audio: (mode !== 'video' && audId) ? { deviceId: { exact: audId } } : false
+                };
+
+                returnStream = await navigator.mediaDevices.getUserMedia(constraints);
+                isSendingVideo = !!constraints.video;
+                isSendingAudio = !!constraints.audio;
+
+                // Preview Locale
+                document.getElementById('previewVideo').srcObject = returnStream;
+                document.getElementById('previewContainer').classList.add('preview-active');
+                document.getElementById('previewModeLabel').textContent = isSendingVideo ? (isSendingAudio ? "LIVE: VIDEO + AUDIO" : "LIVE: VIDEO ONLY") : "LIVE: AUDIO ONLY";
+                document.getElementById('previewBitrateLabel').textContent = document.getElementById('videoBitrate').value + " Mbps";
+
+                updateReturnUI();
+                cameras.forEach(c => syncOperatorTracks(c.id));
+            } catch (err) { alert(err.message); stopReturnStream(); }
+        }
+
+        function stopReturnStream() {
+            if (returnStream) returnStream.getTracks().forEach(t => t.stop());
+            returnStream = null;
+            isSendingVideo = isSendingAudio = false;
+            document.getElementById('previewVideo').srcObject = null;
+            document.getElementById('previewContainer').classList.remove('preview-active');
+            document.getElementById('previewModeLabel').textContent = "STANDBY";
+            updateReturnUI();
+            cameras.forEach(c => syncOperatorTracks(c.id));
+        }
+
+        function updateReturnUI() {
+            document.getElementById('sendVideoBtn').classList.toggle('active', isSendingVideo && !isSendingAudio);
+            document.getElementById('sendAudioBtn').classList.toggle('active', isSendingAudio && !isSendingVideo);
+            document.getElementById('sendAllBtn').classList.toggle('active', isSendingVideo && isSendingAudio);
+        }
+
+        function refreshReturnDevices() {
+            updateConfig(); // Salva la nuova selezione
+            if (isSendingVideo || isSendingAudio) toggleReturnStream(isSendingVideo && isSendingAudio ? 'both' : (isSendingVideo ? 'video' : 'audio'));
+        }
+
+        socket.on('webrtc-offer', async (d) => {
+            if (d.from) {
+                const pc = getOrCreatePC(d.from);
+                await pc.setRemoteDescription(new RTCSessionDescription(d.offer));
+                const ans = await pc.createAnswer();
+                await pc.setLocalDescription(ans);
+                socket.emit('webrtc-answer', { target: d.from, answer: ans });
+                syncOperatorTracks(d.from);
+            }
+        });
+        socket.on('webrtc-answer', async (d) => activePeerConnections[d.from] && await activePeerConnections[d.from].setRemoteDescription(new RTCSessionDescription(d.answer)));
+        socket.on('webrtc-ice', (d) => activePeerConnections[d.from] && activePeerConnections[d.from].addIceCandidate(new RTCIceCandidate(d.candidate)));
+        socket.on('intercomStatusUpdate', (d) => {
+            const row = document.getElementById(`camera-${d.from}`);
+            if (row) row.style.boxShadow = d.active ? 'inset 0 0 10px var(--preview-green)' : 'none';
+        });
+
+        navigator.mediaDevices.getUserMedia({ audio: true }).then(getDevices).catch(console.error);
+    </script>
+</body>
+
+</html>
