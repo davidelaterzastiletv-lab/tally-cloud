@@ -17,7 +17,9 @@ const io = socketIo(server, {
 // Serve frontend files
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html')); // Operator page
+    // Disabilita cache per essere sicuri che si veda la nuova home
+    res.set('Cache-Control', 'no-store');
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 // State store
