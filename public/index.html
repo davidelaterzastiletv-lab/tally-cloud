@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tally Operatore</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body style="padding: 0; overflow: hidden;">
+    <div id="operatorLayout" class="operator-layout">
+        <!-- Lato Sinistra/Alto: Video Return -->
+        <div class="video-container" id="videoContainer">
+            <video id="returnVideo" autoplay playsinline title="Ritorno Regia"></video>
+            <div id="regiaSpeaking" class="intercom-overlay">REGIA PARLA...</div>
+        </div>
+
+        <!-- Lato Destra/Basso: Tally -->
+        <div id="operatorView" class="operator-view">
+            <div class="camera-label-huge" id="camName">CAMERA</div>
+            <div class="camera-number-huge" id="camInput">--</div>
+            <div class="status-text-huge" id="statusText">ATTESA...</div>
+
+            <button id="talkBtn" class="btn-talk btn-talk-operator" onclick="toggleTalk()">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                    <line x1="12" x2="12" y1="19" y2="22" />
+                </svg>
+                TALK
+            </button>
+
+            <!-- Volume Control Button -->
+            <button id="volBtn" class="btn-talk btn-vol-operator" onclick="cycleVolume()">
+                <svg id="volIcon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+                    fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                </svg>
+                <span id="volLabel">100%</span>
+            </button>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        const urlParams = new URLSearchParams(window.location.search);
+        const camId = parseInt(urlParams.get('id'));
+        let myCam = null;
+
+        socket.on('configUpdate', (data) => {
+            myCam = data.cameras.find(c => c.id === camId);
+            if (myCam) {
+                document.getElementById('camName').textContent = myCam.name;
+                document.getElementById('camInput').textContent = myCam.inputNumber;
+                document.title = `Tally - ${myCam.name}`;
+
+                // Prova ad attivare il microfono automaticamente alla prima connessione configurata
+                autoInitMic();
+            }
+        });
+
+        async function autoInitMic() {
+            if (currentStream) return;
+            console.log('[OP] Tentativo inizializzazione automatica microfono e canale...');
+            try {
+                currentStream = await navigator.mediaDevices.getUserMedia({
+                    audio: { echoCancellation: true, noiseSuppression: true }
+                });
+                console.log('[OP] Microfono autorizzato e pronto.');
+
+                // Genera un BEEP audio locale per sbloccare l'AudioContext e confermare il collegamento
+                playConnectBeep();
+
+                // Sincronizza subito i track (anche se isTalking è false, PC viene creato)
+                syncTracks();
+            } catch (err) {
+                console.warn('[OP] Autostart microfono fallito o negato:', err);
+                document.getElementById('statusText').textContent = 'CLICCA PER ATTIVARE MIC';
+            }
+        }
+
+        function playConnectBeep() {
+            try {
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioCtx.createOscillator();
+                const gainNode = audioCtx.createGain();
+
+                oscillator.type = 'sine';
+                oscillator.frequency.setValueAtTime(880, audioCtx.currentTime); // Pitch A5
+                gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.5);
+
+                oscillator.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
+
+                oscillator.start();
+                oscillator.stop(audioCtx.currentTime + 0.5);
+                console.log('[OP] Beep di connessione eseguito.');
+            } catch (e) {
+                console.log('[OP] Impossibile eseguire beep (browser block):', e);
+            }
+        }
+
+        socket.on('tallyUpdate', (tallyStates) => {
+            const state = tallyStates.find(s => s.id === camId);
+            const view = document.getElementById('operatorView');
+            const statusText = document.getElementById('statusText');
+
+            if (state) {
+                view.className = 'operator-view ' + state.status;
+
+                if (state.status === 'program') {
+                    statusText.textContent = 'IN ONDA';
+                } else if (state.status === 'preview') {
+                    statusText.textContent = 'IN PREVIEW';
+                } else {
+                    statusText.textContent = 'NON IN ONDA';
+                }
+            }
+        });
+
+        socket.on('error', (msg) => {
+            document.getElementById('statusText').textContent = 'VMIX OFFLINE';
+        });
+
+        // --- INIZIO WEBRTC INTERCOM & RITORNO ---
+        let currentStream = null; // Mic operatore
+        let peerConnection = null;
+        let isTalking = false;
+
+        const rtcConfig = {
+            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+        };
+
+        function getOrCreatePC() {
+            if (peerConnection) return peerConnection;
+
+            console.log('[OP] Creazione PeerConnection');
+            peerConnection = new RTCPeerConnection(rtcConfig);
+
+            peerConnection.ontrack = (event) => {
+                const track = event.track;
+                const stream = event.streams[0];
+                console.log('[OP] Ricevuto track remoto:', track.kind, track.label);
+
+                if (track.kind === 'video') {
+                    const videoElem = document.getElementById('returnVideo');
+                    if (videoElem) videoElem.srcObject = stream;
+                } else if (track.kind === 'audio') {
+                    // Identifichiamo se è audio del programma (ha anche un video nello stesso stream)
+                    // o se è Intercom (solo audio)
+                    const isProgram = stream.getTracks().some(t => t.kind === 'video');
+
+                    const audioId = isProgram ? 'programAudio' : `remoteAudio-${track.id}`;
+                    let audioElem = document.getElementById(audioId);
+                    if (!audioElem) {
+                        audioElem = document.createElement('audio');
+                        audioElem.id = audioId;
+                        audioElem.autoplay = true;
+                        audioElem.style.display = 'none';
+                        if (isProgram) audioElem.setAttribute('data-type', 'program');
+                        document.body.appendChild(audioElem);
+                    }
+                    audioElem.srcObject = stream;
+                    audioElem.play().catch(e => {
+                        console.log("Audio play blocked, needs interaction", e);
+                        document.body.addEventListener('click', () => audioElem.play(), { once: true });
+                    });
+                }
+            };
+
+            peerConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    socket.emit('webrtc-ice', { from: camId, candidate: event.candidate });
+                }
+            };
+
+            peerConnection.onconnectionstatechange = () => {
+                console.log(`[OP] Stato connessione: ${peerConnection.connectionState}`);
+                if (peerConnection.connectionState === 'closed' || peerConnection.connectionState === 'failed') {
+                    peerConnection = null;
+                }
+            };
+
+            return peerConnection;
+        }
+
+        async function syncTracks() {
+            const pc = getOrCreatePC();
+            const senders = pc.getSenders();
+            const micTrack = currentStream ? currentStream.getAudioTracks()[0] : null;
+            const micSender = senders.find(s => s.track && s.track.kind === 'audio' && s.track.label === micTrack?.label);
+
+            if (isTalking && micTrack) {
+                if (!micSender) {
+                    pc.addTrack(micTrack, currentStream);
+                }
+            } else if (micSender) {
+                pc.removeTrack(micSender);
+            }
+
+            // Negoziazione - invia sempre offerta per aggiornare lo stato dei track
+            try {
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                socket.emit('webrtc-offer', { from: camId, offer: offer });
+            } catch (e) { console.error("Sync error:", e); }
+        }
+
+        socket.on('webrtc-offer', async (data) => {
+            if (data.target !== camId) return;
+            console.log('[OP] Ricevuta offer dalla regia');
+            const pc = getOrCreatePC();
+            await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            socket.emit('webrtc-answer', { from: camId, answer: answer });
+        });
+
+        socket.on('webrtc-answer', async (data) => {
+            if (data.target === camId && peerConnection) {
+                console.log('[OP] Ricevuta answer dalla regia');
+                await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
+            }
+        });
+
+        socket.on('webrtc-ice', (data) => {
+            if (data.target === camId && peerConnection) {
+                peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+            }
+        });
+
+        socket.on('intercomStatusUpdate', (data) => {
+            if (data.target === camId || data.target === 'all') {
+                const label = document.getElementById('regiaSpeaking');
+
+                if (data.active) {
+                    if (label) label.style.display = 'block';
+                    playIntercomBeep();
+                } else {
+                    if (label) label.style.display = 'none';
+                }
+
+                // Forza l'aggiornamento dei volumi basandosi su currentVolLevel e sullo stato di ducking
+                updateLocalVolume();
+            }
+        });
+
+        function playIntercomBeep() {
+            try {
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioCtx.createOscillator();
+                const gainNode = audioCtx.createGain();
+
+                oscillator.type = 'square'; // Suono più "comunicazione radio"
+                oscillator.frequency.setValueAtTime(660, audioCtx.currentTime); // Pitch più basso del connect beep
+                gainNode.gain.setValueAtTime(0.05, audioCtx.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.2);
+
+                oscillator.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
+
+                oscillator.start();
+                oscillator.stop(audioCtx.currentTime + 0.2);
+            } catch (e) { }
+        }
+
+        async function toggleTalk() {
+            const btn = document.getElementById('talkBtn');
+            if (isTalking) {
+                isTalking = false;
+                btn.classList.remove('active');
+            } else {
+                if (!currentStream) {
+                    try {
+                        currentStream = await navigator.mediaDevices.getUserMedia({
+                            audio: {
+                                echoCancellation: true,
+                                noiseSuppression: true
+                            }
+                        });
+                        // Una volta ottenuto il microfono, lo teniamo pronto
+                    } catch (err) {
+                        return alert("Microfono necessario per Intercom!");
+                    }
+                }
+                isTalking = true;
+                btn.classList.add('active');
+            }
+            socket.emit('intercomToggle', { from: camId, active: isTalking });
+            syncTracks();
+        }
+
+        // --- VOLUME MANAGEMENT ---
+        let currentVolLevel = 1.0;
+        function cycleVolume() {
+            const levels = [1.0, 0.5, 0.0];
+            let idx = levels.indexOf(currentVolLevel);
+            currentVolLevel = levels[(idx + 1) % levels.length];
+
+            updateLocalVolume();
+
+            // Update UI
+            const label = document.getElementById('volLabel');
+            const btn = document.getElementById('volBtn');
+            const icon = document.getElementById('volIcon');
+
+            label.textContent = currentVolLevel === 0 ? 'MUTE' : (currentVolLevel * 100) + '%';
+
+            if (currentVolLevel === 0) {
+                btn.style.background = '#dc2626';
+                icon.innerHTML = '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line>';
+            } else if (currentVolLevel === 0.5) {
+                btn.style.background = '#f59e0b';
+                icon.innerHTML = '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>';
+            } else {
+                btn.style.background = ''; // default
+                icon.innerHTML = '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>';
+            }
+        }
+
+        function updateLocalVolume() {
+            // Applica il volume a tutti gli elementi audio/video ricevuti
+            document.querySelectorAll('audio, video').forEach(el => {
+                // Se c'è un ducking attivo, il volume master influenza proporzionalmente
+                const isDucking = document.getElementById('regiaSpeaking').style.display === 'block';
+                const duckFactor = (isDucking && (el.getAttribute('data-type') === 'program' || el.id === 'returnVideo')) ? 0.15 : 1.0;
+                el.volume = currentVolLevel * duckFactor;
+            });
+        }
+
+        // Sblocca audio su interazione utente (fallback definitivo)
+        document.body.addEventListener('click', () => {
+            const silent = new Audio();
+            silent.play().catch(() => { });
+            autoInitMic(); // Riprova init se non era partita
+            updateLocalVolume(); // Assicurati che i volumi siano settati
+        }, { once: true });
+        // --- FINE WEBRTC INTERCOM & RITORNO ---
+    </script>
+</body>
+
+</html>
