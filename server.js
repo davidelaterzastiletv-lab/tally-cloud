@@ -24,6 +24,7 @@ app.get('/', (req, res) => {
 
 // State store
 let currentTally = [];
+let currentConfig = null; // Memorizza la configurazione (nomi camere)
 let bridgeSocket = null; // The connection to the local computer
 
 io.on('connection', (socket) => {
@@ -42,8 +43,10 @@ io.on('connection', (socket) => {
             socket.broadcast.emit('tallyUpdate', data); // Broadcast to all operators
         });
 
-        // Bridge sends config params (optional, if we want operators to see camera names)
+        // Bridge sends config params
         socket.on('configUpdate', (data) => {
+            console.log('Configurazione ricevuta dal Bridge');
+            currentConfig = data; // Salviamo la configurazione
             socket.broadcast.emit('configUpdate', data);
         });
 
