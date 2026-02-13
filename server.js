@@ -14,6 +14,23 @@ const io = socketIo(server, {
     }
 });
 
+
+
+app.use(express.json());
+
+// Login System
+const DIRECTOR_PASSWORD = process.env.DIRECTOR_PASSWORD || 'Davide-admin';
+const SESSION_TOKEN = 'valid-session-' + Date.now(); // Simple in-memory token
+
+app.post('/api/login', (req, res) => {
+    const { password } = req.body;
+    if (password === DIRECTOR_PASSWORD) {
+        res.json({ token: SESSION_TOKEN });
+    } else {
+        res.status(401).json({ error: 'Unauthorized' });
+    }
+});
+
 // Serve frontend files
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('/', (req, res) => {
@@ -31,9 +48,21 @@ io.on('connection', (socket) => {
     console.log(`New client connected: ${socket.id}`);
 
     // Identify who is connecting
-    const clientType = socket.handshake.query.type; // 'bridge' or 'operator'
+    const clientType = socket.handshake.query.type;
+    const token = socket.handshake.query.token;
+
+    // Security Check
+    if (clientType === 'bridge' && token) {
+        if (token !== SESSION_TOKEN) {
+            console.log('ACCESS DENIED: Invalid Token');
+            return socket.disconnect(true);
+        }
+        console.log('WEB DIRECTOR AUTHENTICATED');
+    }
 
     if (clientType === 'bridge') {
+        // Se è un Web Bridge, inviamogli subito lo stato se lo abbiamo
+        if (currentConfig) socket.emit('configUpdate', currentConfig);
         console.log('BRIDGE CONNECTED');
         bridgeSocket = socket;
 
