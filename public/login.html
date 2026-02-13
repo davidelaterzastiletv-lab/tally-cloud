@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login Regia</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+        }
+
+        .login-card {
+            background: var(--card-bg);
+            padding: 2rem;
+            border-radius: 1rem;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            text-align: center;
+            width: 100%;
+            max-width: 400px;
+        }
+
+        input {
+            width: 100%;
+            padding: 1rem;
+            margin: 1rem 0;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 0.5rem;
+            color: white;
+            font-size: 1.1rem;
+        }
+
+        button {
+            width: 100%;
+            padding: 1rem;
+            background: var(--accent);
+            border: none;
+            border-radius: 0.5rem;
+            color: white;
+            font-weight: bold;
+            font-size: 1.1rem;
+            cursor: pointer;
+        }
+
+        .error {
+            color: var(--program-red);
+            margin-top: 1rem;
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="login-card">
+        <h1>Accesso Intercom</h1>
+        <p>Inserisci la password per accedere alla regia</p>
+        <form id="loginForm">
+            <input type="password" id="password" placeholder="Password" required>
+            <button type="submit">ACCEDI</button>
+            <div class="error" id="errorMsg">Password errata</div>
+        </form>
+    </div>
+
+    <script>
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const pwd = document.getElementById('password').value;
+
+            try {
+                const res = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: pwd })
+                });
+
+                if (res.ok) {
+                    const data = await res.json();
+                    sessionStorage.setItem('authToken', data.token);
+                    window.location.href = 'director.html';
+                } else {
+                    document.getElementById('errorMsg').style.display = 'block';
+                }
+            } catch (err) {
+                console.error(err);
+            }
+        });
+    </script>
+</body>
+
+</html>
