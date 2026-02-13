@@ -41,7 +41,17 @@ app.get('/', (req, res) => {
 
 // State store
 let currentTally = [];
-let currentConfig = null; // Memorizza la configurazione (nomi camere)
+// Inizializziamo con 4 Camere di Default per la modalità "Walkie Talkie Web"
+let currentConfig = {
+    cameras: [
+        { id: '1', name: 'Camera 1', inputNumber: 1 },
+        { id: '2', name: 'Camera 2', inputNumber: 2 },
+        { id: '3', name: 'Camera 3', inputNumber: 3 },
+        { id: '4', name: 'Camera 4', inputNumber: 4 }
+    ],
+    vmixIp: '127.0.0.1',
+    directorSettings: {}
+};
 let bridgeSocket = null; // The connection to the local computer
 
 io.on('connection', (socket) => {
