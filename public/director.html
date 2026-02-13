@@ -184,37 +184,44 @@
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
-        const socket = io();
+        const token = sessionStorage.getItem('authToken');
+        if (!token) window.location.href = 'login.html';
+
+        const socket = io({
+            query: {
+                type: 'bridge',
+                token: token
+            }
+        });
+
+        socket.on('connect_error', (err) => {
+            if (err.message === 'Authentication error') {
+                window.location.href = 'login.html';
+            }
+        });
+
         let cameras = [];
         let currentStatuses = {};
 
         socket.on('configUpdate', (data) => {
-            cameras = data.cameras;
-            const ipInput = document.getElementById('vmixIp');
-            if (ipInput.value === '') {
-                ipInput.value = data.vmixIp || '';
-            }
-
-            // Applica impostazioni memorizzate
+            cameras = data.cameras || [];
             if (data.directorSettings) {
                 const s = data.directorSettings;
                 if (s.videoBitrate) document.getElementById('videoBitrate').value = s.videoBitrate;
-                // Le sorgenti verranno applicate dopo che getDevices avrà popolato i select
                 window._pendingSettings = s;
+                if (window._pendingSettings.audioSource) initAudio(); // Auto-init audio if saved
             }
-
             renderCameras();
         });
 
         socket.on('vmixStatus', (data) => {
+            // Dummy status for web mode
             const dot = document.getElementById('vmixDot');
             const text = document.getElementById('vmixText');
-            if (data.connected) {
-                dot.className = 'dot green';
-                text.textContent = 'vMix Online';
+            if (data && data.connected) {
+                dot.className = 'dot green'; text.textContent = 'vMix Online';
             } else {
-                dot.className = 'dot red';
-                text.textContent = 'vMix Offline';
+                dot.className = 'dot red'; text.textContent = 'Web Mode';
             }
         });
 
@@ -222,12 +229,11 @@
             tallyStates.forEach(state => {
                 currentStatuses[state.id] = state.status;
                 const indicator = document.querySelector(`#camera-${state.id} .status-indicator`);
-                if (indicator) {
-                    indicator.className = 'status-indicator ' + state.status;
-                }
+                if (indicator) indicator.className = 'status-indicator ' + state.status;
             });
         });
 
+        // Funzione modificata per inviare config via Socket (Server Cloud effimero)
         async function updateConfig() {
             const ip = document.getElementById('vmixIp').value;
             const settings = {
@@ -237,11 +243,9 @@
                 videoBitrate: document.getElementById('videoBitrate').value
             };
 
-            await fetch('/api/config', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ip, newCameras: cameras, settings })
-            });
+            // Aggiorniamo la variabile locale per reattività immediata
+            // Invia al server tramite socket (che lo diffonderà agli operatori)
+            socket.emit('configUpdate', { vmixIp: ip, cameras, directorSettings: settings });
         }
 
         function renderCameras() {
@@ -321,7 +325,22 @@
         let isSendingVideo = false;
         let isSendingAudio = false;
 
-        const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+        const rtcConfig = {
+            iceServers: [
+                { urls: "stun:stun.l.google.com:19302" },
+                // TUO SERVER TURN PRIVATO (VPS ARUBA)
+                {
+                    urls: "turn:89.46.67.179:3478",
+                    username: "vmix-tally-turn-2",
+                    credential: "VmixTallyTurn2026!"
+                },
+                {
+                    urls: "turn:89.46.67.179:3478?transport=tcp",
+                    username: "vmix-tally-turn-2",
+                    credential: "VmixTallyTurn2026!"
+                }
+            ]
+        };
 
         async function getDevices() {
             try {
