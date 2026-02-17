@@ -9,6 +9,17 @@
 </head>
 
 <body style="padding: 0; overflow: hidden;">
+    <!-- Overlay per l'attivazione iniziale -->
+    <div id="unlockOverlay" class="unlock-overlay" onclick="unlockOperator()">
+        <div class="unlock-content">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 1a11 11 0 1 0 11 11A11 11 0 0 0 12 1zm0 18a7 7 0 1 1 7-7 7 7 0 0 1-7 7zm3-7l-5-3v6l5-3z" />
+            </svg>
+            <h2>ABILITA FLUSSO AUDIO-VIDEO</h2>
+            <p>Tocca per iniziare a ricevere video e intercom</p>
+        </div>
+    </div>
+
     <div id="operatorLayout" class="operator-layout">
         <!-- Lato Sinistra/Alto: Video Return -->
         <div class="video-container" id="videoContainer">
@@ -352,13 +363,22 @@
             });
         }
 
-        // Sblocca audio su interazione utente (fallback definitivo)
-        document.body.addEventListener('click', () => {
+        // Sblocca audio su interazione utente
+        function unlockOperator() {
+            const overlay = document.getElementById('unlockOverlay');
+            if (overlay) overlay.style.display = 'none';
+
             const silent = new Audio();
             silent.play().catch(() => { });
-            autoInitMic(); // Riprova init se non era partita
-            updateLocalVolume(); // Assicurati che i volumi siano settati
-        }, { once: true });
+
+            autoInitMic(); // Forza init mic
+            updateLocalVolume(); // Forza aggiornamento volumi
+
+            // Se c'è già un video caricato ma fermo, forzalo
+            const v = document.getElementById('returnVideo');
+            if (v && v.srcObject) v.play().catch(() => { });
+        }
+
         // --- FINE WEBRTC INTERCOM & RITORNO ---
     </script>
 </body>
