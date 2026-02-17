@@ -106,7 +106,7 @@
         }
 
         socket.on('tallyUpdate', (tallyStates) => {
-            const state = tallyStates.find(s => s.id === camId);
+            const state = tallyStates.find(s => s.id == camId);
             const view = document.getElementById('operatorView');
             const statusText = document.getElementById('statusText');
 
