@@ -162,7 +162,13 @@
 
                 if (track.kind === 'video') {
                     const videoElem = document.getElementById('returnVideo');
-                    if (videoElem) videoElem.srcObject = stream;
+                    if (videoElem) {
+                        videoElem.srcObject = stream;
+                        videoElem.play().catch(e => {
+                            console.log("Video play blocked, needs interaction", e);
+                            document.body.addEventListener('click', () => videoElem.play(), { once: true });
+                        });
+                    }
                 } else if (track.kind === 'audio') {
                     // Identifichiamo se è audio del programma (ha anche un video nello stesso stream)
                     // o se è Intercom (solo audio)
