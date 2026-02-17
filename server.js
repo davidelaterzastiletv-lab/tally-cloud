@@ -14,13 +14,11 @@ const io = socketIo(server, {
     }
 });
 
-
-
 app.use(express.json());
 
 // Login System
 const DIRECTOR_PASSWORD = process.env.DIRECTOR_PASSWORD || 'Davide-admin';
-const SESSION_TOKEN = 'valid-session-' + Date.now(); // Simple in-memory token
+const SESSION_TOKEN = 'valid-session-' + Date.now();
 
 app.post('/api/login', (req, res) => {
     const { password } = req.body;
@@ -31,93 +29,95 @@ app.post('/api/login', (req, res) => {
     }
 });
 
-// Serve frontend files
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('/', (req, res) => {
-    // Disabilita cache per essere sicuri che si veda la nuova home
     res.set('Cache-Control', 'no-store');
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 // State store
 let currentTally = [];
-// Inizializziamo con 4 Camere di Default per la modalità "Walkie Talkie Web"
 let currentConfig = {
     cameras: [
-        { id: '1', name: 'Camera 1', inputNumber: 1 },
-        { id: '2', name: 'Camera 2', inputNumber: 2 },
-        { id: '3', name: 'Camera 3', inputNumber: 3 },
-        { id: '4', name: 'Camera 4', inputNumber: 4 }
+        { id: 1, name: 'Camera 1', inputNumber: 1 },
+        { id: 2, name: 'Camera 2', inputNumber: 2 },
+        { id: 3, name: 'Camera 3', inputNumber: 3 },
+        { id: 4, name: 'Camera 4', inputNumber: 4 }
     ],
     vmixIp: '127.0.0.1',
     directorSettings: {}
 };
-let bridgeSocket = null; // The connection to the local computer
 
 io.on('connection', (socket) => {
-    console.log(`New client connected: ${socket.id}`);
-
-    // Identify who is connecting
     const clientType = socket.handshake.query.type;
     const token = socket.handshake.query.token;
 
-    // Security Check
-    if (clientType === 'bridge' && token) {
-        if (token !== SESSION_TOKEN) {
+    if (clientType === 'bridge') {
+        // Security Check per il Web Director (opzionale per il bridge locale se non ha token)
+        if (token && token !== SESSION_TOKEN) {
             console.log('ACCESS DENIED: Invalid Token');
             return socket.disconnect(true);
         }
-        console.log('WEB DIRECTOR AUTHENTICATED');
-    }
 
-    if (clientType === 'bridge') {
-        // Se è un Web Bridge, inviamogli subito lo stato se lo abbiamo
-        if (currentConfig) socket.emit('configUpdate', currentConfig);
-        console.log('BRIDGE CONNECTED');
-        bridgeSocket = socket;
+        socket.join('bridges');
+        console.log(`BRIDGE/DIRECTOR CONNECTED: ${socket.id}`);
 
-        // Bridge sends initial state
+        // Invia stato attuale
+        socket.emit('configUpdate', currentConfig);
+        if (currentTally.length > 0) socket.emit('tallyUpdate', currentTally);
+
         socket.on('tallyUpdate', (data) => {
             currentTally = data;
-            socket.broadcast.emit('tallyUpdate', data); // Broadcast to all operators
+            io.to('operators').emit('tallyUpdate', data);
+            io.to('bridges').emit('tallyUpdate', data);
         });
 
-        // Bridge sends config params
         socket.on('configUpdate', (data) => {
-            console.log('Configurazione ricevuta dal Bridge');
-            currentConfig = data; // Salviamo la configurazione
-            socket.broadcast.emit('configUpdate', data);
+            console.log('Configurazione aggiornata');
+            currentConfig = data;
+            io.emit('configUpdate', data); // A tutti
         });
 
-        // WebRTC Signaling: Bridge (Director) -> Operator
-        socket.on('webrtc-offer', (data) => socket.broadcast.emit('webrtc-offer', data));
-        socket.on('webrtc-answer', (data) => socket.broadcast.emit('webrtc-answer', data));
-        socket.on('webrtc-ice', (data) => socket.broadcast.emit('webrtc-ice', data));
+        socket.on('vmixStatus', (data) => {
+            io.emit('vmixStatus', data);
+        });
 
-        socket.on('disconnect', () => {
-            console.log('BRIDGE DISCONNECTED');
-            bridgeSocket = null;
+        // Signaling: Bridge -> Operator
+        socket.on('webrtc-offer', (data) => {
+            socket.broadcast.emit('webrtc-offer', data);
+        });
+        socket.on('webrtc-answer', (data) => {
+            socket.broadcast.emit('webrtc-answer', data);
+        });
+        socket.on('webrtc-ice', (data) => {
+            socket.broadcast.emit('webrtc-ice', data);
+        });
+
+        socket.on('intercomToggle', (data) => {
+            io.to('operators').emit('intercomStatusUpdate', data);
         });
 
     } else {
-        // It's an operator
-        // Send current state immediately
+        // OPERATORE
+        socket.join('operators');
+        console.log(`OPERATOR CONNECTED: ${socket.id}`);
+
         socket.emit('tallyUpdate', currentTally);
+        socket.emit('configUpdate', currentConfig);
 
-        // FIX: Se abbiamo già la configurazione in memoria, mandiamola subito al nuovo arrivato!
-        if (currentConfig) {
-            socket.emit('configUpdate', currentConfig);
-        }
-
-        // WebRTC Signaling: Operator -> Bridge (Director)
+        // Signaling: Operator -> Bridges
         socket.on('webrtc-offer', (data) => {
-            if (bridgeSocket) bridgeSocket.emit('webrtc-offer', data);
+            io.to('bridges').emit('webrtc-offer', data);
         });
         socket.on('webrtc-answer', (data) => {
-            if (bridgeSocket) bridgeSocket.emit('webrtc-answer', data);
+            io.to('bridges').emit('webrtc-answer', data);
         });
         socket.on('webrtc-ice', (data) => {
-            if (bridgeSocket) bridgeSocket.emit('webrtc-ice', data);
+            io.to('bridges').emit('webrtc-ice', data);
+        });
+
+        socket.on('intercomToggle', (data) => {
+            io.to('bridges').emit('intercomStatusUpdate', data);
         });
     }
 
