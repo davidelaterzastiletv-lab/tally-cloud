@@ -113,6 +113,15 @@ async function pollVmix() {
         if (!isVmixConnected) {
             isVmixConnected = true;
             io.emit('vmixStatus', { connected: true });
+            
+            // Invia subito lo stato online al cloud se siamo in bridge mode
+            if (process.env.REMOTE_SERVER) {
+                fetch(`${process.env.REMOTE_SERVER}/api/tally-push`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ tallyStates: [], connected: true })
+                }).catch(() => { });
+            }
         }
 
         const activeInput = parseInt(result.vmix.active[0]);
