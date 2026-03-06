@@ -22,6 +22,7 @@ const io = socketIo(server);
 
 let vmixIp = 'localhost:8088';
 let pollInterval = null;
+let isBridgeActive = false; // Flag per capire se stiamo ricevendo dati dal cloud
 let cameras = [
     { id: 1, name: 'Camera 1', inputNumber: 1 },
     { id: 2, name: 'Camera 2', inputNumber: 2 },
@@ -87,11 +88,20 @@ app.get('/api/state', (req, res) => {
 // --- INIZIO MODALITÀ BRIDGE ---
 // Endpoint per ricevere il tally da un server locale (Bridge)
 app.post('/api/tally-push', (req, res) => {
-    const { tallyStates, connected } = req.body;
+    const { tallyStates, connected, remoteCameras } = req.body;
     
+    // Se riceviamo dati dal cloud, disattiviamo il polling locale su Render
+    isBridgeActive = true;
+
     if (connected !== undefined && connected !== isVmixConnected) {
         isVmixConnected = connected;
         io.emit('vmixStatus', { connected: isVmixConnected });
+    }
+
+    // Sincronizza le camere se inviate dal locale
+    if (remoteCameras && JSON.stringify(remoteCameras) !== JSON.stringify(cameras)) {
+        cameras = remoteCameras;
+        io.emit('configUpdate', { cameras, vmixIp, directorSettings });
     }
 
     if (Array.isArray(tallyStates)) {
@@ -104,6 +114,8 @@ app.post('/api/tally-push', (req, res) => {
 let isVmixConnected = false;
 
 async function pollVmix() {
+    if (isBridgeActive && !process.env.REMOTE_SERVER) return; // Se siamo su Render e il bridge è attivo, non facciamo nulla
+
     try {
         const response = await fetch(`http://${vmixIp}/api`);
         const xml = await response.text();
@@ -141,8 +153,15 @@ async function pollVmix() {
             fetch(`${process.env.REMOTE_SERVER}/api/tally-push`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ tallyStates, connected: isVmixConnected })
-            }).catch(() => { });
+                body: JSON.stringify({ 
+                    tallyStates, 
+                    connected: isVmixConnected,
+                    remoteCameras: cameras 
+                })
+            }).then(() => {
+                // Feedback ogni 5 secondi per non intasare la console
+                if (Date.now() % 5000 < 600) console.log('>>> Segnale inviato al Cloud con successo');
+            }).catch((e) => console.error('!!! Errore invio al Cloud:', e.message));
         }
     } catch (err) {
         if (isVmixConnected) {
@@ -150,7 +169,6 @@ async function pollVmix() {
             io.emit('vmixStatus', { connected: false });
             io.emit('error', 'Unable to connect to vMix');
 
-            // Notifica il cloud che vMix è andato offline
             if (process.env.REMOTE_SERVER) {
                 fetch(`${process.env.REMOTE_SERVER}/api/tally-push`, {
                     method: 'POST',
@@ -159,10 +177,7 @@ async function pollVmix() {
                 }).catch(() => { });
             }
         }
-        // Logga l'errore solo se non siamo in modalità bridge (per pulizia logs su Render)
-        if (!process.env.REMOTE_SERVER && isVmixConnected) {
-            console.error('Error polling vMix:', err.message);
-        }
+        console.error('Errore vMix:', err.message);
     }
 }
 
