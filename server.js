@@ -1,125 +1,176 @@
 const express = require('express');
-const http = require('http');
+const https = require('https');
 const socketIo = require('socket.io');
+const fetch = require('node-fetch');
 const path = require('path');
+const xml2js = require('xml2js');
+const fs = require('fs-extra');
 
-const PORT = process.env.PORT || 3000;
+const PORT = 3000;
+const CONFIG_FILE = path.join(__dirname, 'config.json');
+
+// --- INIZIO NUOVA SEZIONE HTTPS ---
+const options = {
+    key: fs.readFileSync(path.join(__dirname, 'server.key')),
+    cert: fs.readFileSync(path.join(__dirname, 'server.cert'))
+};
+// --- FINE NUOVA SEZIONE HTTPS ---
 
 const app = express();
-const server = http.createServer(app);
-const io = socketIo(server, {
-    cors: {
-        origin: "*",
-        methods: ["GET", "POST"]
-    }
-});
+const server = https.createServer(options, app);
+const io = socketIo(server);
 
-app.use(express.json());
-
-// Login System
-const DIRECTOR_PASSWORD = process.env.DIRECTOR_PASSWORD || 'Davide-admin';
-const SESSION_TOKEN = 'valid-session-' + Date.now();
-
-app.post('/api/login', (req, res) => {
-    const { password } = req.body;
-    if (password === DIRECTOR_PASSWORD) {
-        res.json({ token: SESSION_TOKEN });
-    } else {
-        res.status(401).json({ error: 'Unauthorized' });
-    }
-});
-
-app.use(express.static(path.join(__dirname, 'public')));
-app.get('/', (req, res) => {
-    res.set('Cache-Control', 'no-store');
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
-// State store
-let currentTally = [];
-let currentConfig = {
-    cameras: [
-        { id: 1, name: 'Camera 1', inputNumber: 1 },
-        { id: 2, name: 'Camera 2', inputNumber: 2 },
-        { id: 3, name: 'Camera 3', inputNumber: 3 },
-        { id: 4, name: 'Camera 4', inputNumber: 4 }
-    ],
-    vmixIp: '127.0.0.1',
-    directorSettings: {}
+let vmixIp = 'localhost:8088';
+let pollInterval = null;
+let cameras = [
+    { id: 1, name: 'Camera 1', inputNumber: 1 },
+    { id: 2, name: 'Camera 2', inputNumber: 2 },
+    { id: 3, name: 'Camera 3', inputNumber: 3 },
+    { id: 4, name: 'Camera 4', inputNumber: 4 }
+];
+let directorSettings = {
+    audioSource: '',
+    videoReturnSource: '',
+    audioReturnSource: '',
+    videoBitrate: '1.0'
 };
 
-io.on('connection', (socket) => {
-    const clientType = socket.handshake.query.type;
-    const token = socket.handshake.query.token;
+// Load configuration on startup
+async function loadConfig() {
+    try {
+        if (await fs.pathExists(CONFIG_FILE)) {
+            const data = await fs.readJson(CONFIG_FILE);
+            vmixIp = data.vmixIp || vmixIp;
+            cameras = data.cameras || cameras;
+            directorSettings = { ...directorSettings, ...(data.directorSettings || {}) };
+            console.log('Configurazione caricata con successo');
+        }
+        // Start polling regardless if config was found (uses defaults if not)
+        startPolling();
+    } catch (err) {
+        console.error('Errore nel caricamento della configurazione:', err);
+        startPolling(); // Still start polling if error
+    }
+}
 
-    if (clientType === 'bridge') {
-        // Security Check per il Web Director (opzionale per il bridge locale se non ha token)
-        if (token && token !== SESSION_TOKEN) {
-            console.log('ACCESS DENIED: Invalid Token');
-            return socket.disconnect(true);
+async function saveConfig() {
+    try {
+        await fs.writeJson(CONFIG_FILE, { vmixIp, cameras, directorSettings });
+    } catch (err) {
+        console.error('Errore nel salvataggio della configurazione:', err);
+    }
+}
+
+loadConfig();
+
+app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.json());
+
+// API to update vMix IP and configuration
+app.post('/api/config', (req, res) => {
+    const { ip, newCameras, settings } = req.body;
+    if (ip) vmixIp = ip;
+    if (newCameras) cameras = newCameras;
+    if (settings) directorSettings = { ...directorSettings, ...settings };
+
+    saveConfig();
+    startPolling();
+    // Broadcast the update to all connected clients immediately
+    io.emit('configUpdate', { cameras, vmixIp, directorSettings });
+    res.json({ status: 'ok', vmixIp, cameras, directorSettings });
+});
+
+app.get('/api/state', (req, res) => {
+    res.json({ vmixIp, cameras });
+});
+
+// --- INIZIO MODALITÀ BRIDGE ---
+// Endpoint per ricevere il tally da un server locale (Bridge)
+app.post('/api/tally-push', (req, res) => {
+    const tallyStates = req.body;
+    if (Array.isArray(tallyStates)) {
+        io.emit('tallyUpdate', tallyStates);
+        res.json({ status: 'ok' });
+    } else {
+        res.status(400).json({ status: 'error', message: 'Dati non validi' });
+    }
+});
+// --- FINE MODALITÀ BRIDGE ---
+
+let isVmixConnected = false;
+
+async function pollVmix() {
+    try {
+        const response = await fetch(`http://${vmixIp}/api`);
+        const xml = await response.text();
+        const parser = new xml2js.Parser();
+        const result = await parser.parseStringPromise(xml);
+
+        if (!isVmixConnected) {
+            isVmixConnected = true;
+            io.emit('vmixStatus', { connected: true });
         }
 
-        socket.join('bridges');
-        console.log(`BRIDGE/DIRECTOR CONNECTED: ${socket.id}`);
+        const activeInput = parseInt(result.vmix.active[0]);
+        const previewInput = parseInt(result.vmix.preview[0]);
 
-        // Invia stato attuale
-        socket.emit('configUpdate', currentConfig);
-        if (currentTally.length > 0) socket.emit('tallyUpdate', currentTally);
-
-        socket.on('tallyUpdate', (data) => {
-            currentTally = data;
-            io.to('operators').emit('tallyUpdate', data);
-            io.to('bridges').emit('tallyUpdate', data);
+        const tallyStates = cameras.map(cam => {
+            let status = 'off';
+            if (cam.inputNumber === activeInput) status = 'program';
+            else if (cam.inputNumber === previewInput) status = 'preview';
+            return { id: cam.id, status };
         });
 
-        socket.on('configUpdate', (data) => {
-            console.log('Configurazione aggiornata');
-            currentConfig = data;
-            io.emit('configUpdate', data); // A tutti
-        });
+        io.emit('tallyUpdate', tallyStates);
 
-        socket.on('vmixStatus', (data) => {
-            io.emit('vmixStatus', data);
-        });
-
-        // Signaling: Bridge -> Operator
-        socket.on('webrtc-offer', (data) => {
-            socket.broadcast.emit('webrtc-offer', data);
-        });
-        socket.on('webrtc-answer', (data) => {
-            socket.broadcast.emit('webrtc-answer', data);
-        });
-        socket.on('webrtc-ice', (data) => {
-            socket.broadcast.emit('webrtc-ice', data);
-        });
-
-        socket.on('intercomToggle', (data) => {
-            io.to('operators').emit('intercomStatusUpdate', data);
-        });
-
-    } else {
-        // OPERATORE
-        socket.join('operators');
-        console.log(`OPERATOR CONNECTED: ${socket.id}`);
-
-        socket.emit('tallyUpdate', currentTally);
-        socket.emit('configUpdate', currentConfig);
-
-        // Signaling: Operator -> Bridges
-        socket.on('webrtc-offer', (data) => {
-            io.to('bridges').emit('webrtc-offer', data);
-        });
-        socket.on('webrtc-answer', (data) => {
-            io.to('bridges').emit('webrtc-answer', data);
-        });
-        socket.on('webrtc-ice', (data) => {
-            io.to('bridges').emit('webrtc-ice', data);
-        });
-
-        socket.on('intercomToggle', (data) => {
-            io.to('bridges').emit('intercomStatusUpdate', data);
-        });
+        // Se è definito un server remoto (modalità Bridge), invia il segnale al cloud
+        if (process.env.REMOTE_SERVER) {
+            fetch(`${process.env.REMOTE_SERVER}/api/tally-push`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(tallyStates)
+            }).catch(() => { }); // Fallimento silenzioso del bridge (es. rete instabile)
+        }
+    } catch (err) {
+        if (isVmixConnected) {
+            isVmixConnected = false;
+            io.emit('vmixStatus', { connected: false });
+            io.emit('error', 'Unable to connect to vMix');
+        }
+        // Logga l'errore solo se non siamo in modalità bridge (per pulizia logs su Render)
+        if (!process.env.REMOTE_SERVER && isVmixConnected) {
+            console.error('Error polling vMix:', err.message);
+        }
     }
+}
+
+function startPolling() {
+    if (pollInterval) clearInterval(pollInterval);
+    pollInterval = setInterval(pollVmix, 500);
+}
+
+io.on('connection', (socket) => {
+    console.log('New client connected');
+    socket.emit('configUpdate', { cameras, vmixIp, directorSettings });
+    socket.emit('vmixStatus', { connected: isVmixConnected });
+
+    // --- INIZIO WEBRTC SIGNALING ---
+    socket.on('webrtc-offer', (data) => {
+        socket.broadcast.emit('webrtc-offer', data);
+    });
+
+    socket.on('webrtc-answer', (data) => {
+        socket.broadcast.emit('webrtc-answer', data);
+    });
+
+    socket.on('webrtc-ice', (data) => {
+        socket.broadcast.emit('webrtc-ice', data);
+    });
+
+    socket.on('intercomToggle', (data) => {
+        socket.broadcast.emit('intercomStatusUpdate', data);
+    });
+    // --- FINE WEBRTC SIGNALING ---
 
     socket.on('disconnect', () => {
         console.log('Client disconnected');
@@ -127,5 +178,5 @@ io.on('connection', (socket) => {
 });
 
 server.listen(PORT, () => {
-    console.log(`Cloud Server running on port ${PORT}`);
+    console.log(`Server running on https://localhost:${PORT}`);
 });
