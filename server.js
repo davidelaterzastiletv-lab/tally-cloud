@@ -6,7 +6,7 @@ const path = require('path');
 const xml2js = require('xml2js');
 const fs = require('fs-extra');
 
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 const CONFIG_FILE = path.join(__dirname, 'config.json');
 
 // --- INIZIO NUOVA SEZIONE HTTPS ---
@@ -87,13 +87,17 @@ app.get('/api/state', (req, res) => {
 // --- INIZIO MODALITÀ BRIDGE ---
 // Endpoint per ricevere il tally da un server locale (Bridge)
 app.post('/api/tally-push', (req, res) => {
-    const tallyStates = req.body;
+    const { tallyStates, connected } = req.body;
+    
+    if (connected !== undefined && connected !== isVmixConnected) {
+        isVmixConnected = connected;
+        io.emit('vmixStatus', { connected: isVmixConnected });
+    }
+
     if (Array.isArray(tallyStates)) {
         io.emit('tallyUpdate', tallyStates);
-        res.json({ status: 'ok' });
-    } else {
-        res.status(400).json({ status: 'error', message: 'Dati non validi' });
     }
+    res.json({ status: 'ok' });
 });
 // --- FINE MODALITÀ BRIDGE ---
 
@@ -128,14 +132,23 @@ async function pollVmix() {
             fetch(`${process.env.REMOTE_SERVER}/api/tally-push`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(tallyStates)
-            }).catch(() => { }); // Fallimento silenzioso del bridge (es. rete instabile)
+                body: JSON.stringify({ tallyStates, connected: isVmixConnected })
+            }).catch(() => { });
         }
     } catch (err) {
         if (isVmixConnected) {
             isVmixConnected = false;
             io.emit('vmixStatus', { connected: false });
             io.emit('error', 'Unable to connect to vMix');
+
+            // Notifica il cloud che vMix è andato offline
+            if (process.env.REMOTE_SERVER) {
+                fetch(`${process.env.REMOTE_SERVER}/api/tally-push`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ tallyStates: [], connected: false })
+                }).catch(() => { });
+            }
         }
         // Logga l'errore solo se non siamo in modalità bridge (per pulizia logs su Render)
         if (!process.env.REMOTE_SERVER && isVmixConnected) {
