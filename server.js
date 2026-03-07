@@ -53,6 +53,11 @@ let directorSettings = { audioSource: '', videoReturnSource: '', audioReturnSour
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
+// Pagina principale per l'EXE (Dashboard locale)
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'bridge-ui.html'));
+});
+
 app.post('/api/tally-push', (req, res) => {
     const { tallyStates, connected, remoteCameras } = req.body;
     isBridgeActive = true;
@@ -152,4 +157,11 @@ io.on('connection', (socket) => {
     socket.on('intercomToggle', d => socket.broadcast.emit('intercomStatusUpdate', d));
 });
 
-server.listen(PORT, () => console.log(`Server attivo su porta ${PORT}`));
+server.listen(PORT, () => {
+    console.log(`Server attivo su porta ${PORT}`);
+    // Apre automaticamente la dashboard nel browser se siamo sul PC locale
+    if (!process.env.RENDER) {
+        const start = (process.platform == 'darwin' ? 'open' : process.platform == 'win32' ? 'start' : 'xdg-open');
+        try { require('child_process').exec(start + ' http://localhost:' + PORT); } catch (e) {}
+    }
+});
