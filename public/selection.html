@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scegli la tua Camera</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        body {
+            flex-direction: column;
+            align-items: center;
+            padding: 4rem 2rem;
+        }
+
+        .selection-title {
+            margin-bottom: 3rem;
+            text-align: center;
+        }
+
+        .selection-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 1.5rem;
+            width: 100%;
+            max-width: 800px;
+        }
+
+        .cam-btn {
+            background: var(--card-bg);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            padding: 2rem;
+            border-radius: 1rem;
+            text-align: center;
+            text-decoration: none;
+            color: white;
+            font-weight: 700;
+            transition: all 0.2s;
+        }
+
+        .cam-btn:hover {
+            background: var(--accent);
+            transform: translateY(-3px);
+        }
+    </style>
+</head>
+
+<body>
+    <div class="selection-title">
+        <h1>Seleziona la tua postazione</h1>
+        <p>Scegli la camera che ti è stata assegnata</p>
+    </div>
+
+    <div class="selection-grid" id="camGrid">
+        <!-- Cameras will be loaded here -->
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        socket.on('configUpdate', (data) => {
+            const grid = document.getElementById('camGrid');
+            grid.innerHTML = '';
+            data.cameras.forEach(cam => {
+                const a = document.createElement('a');
+                a.className = 'cam-btn';
+                a.href = `operator.html?id=${cam.id}`;
+                a.textContent = cam.name;
+                grid.appendChild(a);
+            });
+        });
+    </script>
+</body>
+
+</html>

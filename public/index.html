@@ -4,70 +4,76 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Scegli la tua Camera</title>
+    <title>vMix Tally Pro - Home</title>
     <link rel="stylesheet" href="style.css">
-    <style>
-        body {
-            flex-direction: column;
-            align-items: center;
-            padding: 4rem 2rem;
-        }
-
-        .selection-title {
-            margin-bottom: 3rem;
-            text-align: center;
-        }
-
-        .selection-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-            gap: 1.5rem;
-            width: 100%;
-            max-width: 800px;
-        }
-
-        .cam-btn {
-            background: var(--card-bg);
-            border: 1px solid rgba(255, 255, 255, 0.05);
-            padding: 2rem;
-            border-radius: 1rem;
-            text-align: center;
-            text-decoration: none;
-            color: white;
-            font-weight: 700;
-            transition: all 0.2s;
-        }
-
-        .cam-btn:hover {
-            background: var(--accent);
-            transform: translateY(-3px);
-        }
-    </style>
 </head>
 
 <body>
-    <div class="selection-title">
-        <h1>Seleziona la tua postazione</h1>
-        <p>Scegli la camera che ti è stata assegnata (Cloud v2.0)</p>
+    <div class="status-bar">
+        <div class="status-pill">
+            <div class="dot green" id="serverDot"></div>
+            <span>Server: <span id="serverText">Connesso</span></span>
+        </div>
+        <div class="status-pill">
+            <div class="dot red" id="vmixDot"></div>
+            <span>vMix: <span id="vmixText">Scollegato</span></span>
+        </div>
     </div>
 
-    <div class="selection-grid" id="camGrid">
-        <!-- Cameras will be loaded here -->
+    <div class="landing-card">
+        <h1>vMix Tally Pro</h1>
+        <p>Benvenuto. Seleziona il tuo ruolo per iniziare.</p>
+
+        <div class="role-container">
+            <a href="director.html" class="role-card">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path
+                        d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+                    <circle cx="12" cy="12" r="3" />
+                </svg>
+                <span>Regia</span>
+            </a>
+            <a href="selection.html" class="role-card">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
+                    <circle cx="12" cy="7" r="4" />
+                </svg>
+                <span>Operatore</span>
+            </a>
+        </div>
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
-        socket.on('configUpdate', (data) => {
-            const grid = document.getElementById('camGrid');
-            grid.innerHTML = '';
-            data.cameras.forEach(cam => {
-                const a = document.createElement('a');
-                a.className = 'cam-btn';
-                a.href = `operator.html?id=${cam.id}`;
-                a.textContent = cam.name;
-                grid.appendChild(a);
-            });
+
+        socket.on('connect', () => {
+            document.getElementById('serverDot').className = 'dot green';
+            document.getElementById('serverText').textContent = 'Connesso';
+        });
+
+        socket.on('disconnect', () => {
+            document.getElementById('serverDot').className = 'dot red';
+            document.getElementById('serverText').textContent = 'Scollegato';
+            document.getElementById('vmixDot').className = 'dot red';
+            document.getElementById('vmixText').textContent = 'Scollegato';
+        });
+
+        socket.on('vmixStatus', (data) => {
+            if (data.connected) {
+                document.getElementById('vmixDot').className = 'dot green';
+                document.getElementById('vmixText').textContent = 'Connesso';
+            } else {
+                document.getElementById('vmixDot').className = 'dot red';
+                document.getElementById('vmixText').textContent = 'Scollegato';
+            }
+        });
+
+        socket.on('error', () => {
+            document.getElementById('vmixDot').className = 'dot red';
+            document.getElementById('vmixText').textContent = 'Scollegato';
         });
     </script>
 </body>

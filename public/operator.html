@@ -9,17 +9,6 @@
 </head>
 
 <body style="padding: 0; overflow: hidden;">
-    <!-- Overlay per l'attivazione iniziale -->
-    <div id="unlockOverlay" class="unlock-overlay" onclick="unlockOperator()">
-        <div class="unlock-content">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M12 1a11 11 0 1 0 11 11A11 11 0 0 0 12 1zm0 18a7 7 0 1 1 7-7 7 7 0 0 1-7 7zm3-7l-5-3v6l5-3z" />
-            </svg>
-            <h2>ABILITA FLUSSO AUDIO-VIDEO</h2>
-            <p>Tocca per iniziare a ricevere video e intercom</p>
-        </div>
-    </div>
-
     <div id="operatorLayout" class="operator-layout">
         <!-- Lato Sinistra/Alto: Video Return -->
         <div class="video-container" id="videoContainer">
@@ -117,7 +106,7 @@
         }
 
         socket.on('tallyUpdate', (tallyStates) => {
-            const state = tallyStates.find(s => s.id == camId);
+            const state = tallyStates.find(s => s.id === camId);
             const view = document.getElementById('operatorView');
             const statusText = document.getElementById('statusText');
 
@@ -144,20 +133,7 @@
         let isTalking = false;
 
         const rtcConfig = {
-            iceServers: [
-                { urls: "stun:stun.l.google.com:19302" },
-                // TUO SERVER TURN PRIVATO (VPS ARUBA)
-                {
-                    urls: "turn:89.46.67.179:3478",
-                    username: "vmix-tally-turn-2",
-                    credential: "VmixTallyTurn2026!"
-                },
-                {
-                    urls: "turn:89.46.67.179:3478?transport=tcp",
-                    username: "vmix-tally-turn-2",
-                    credential: "VmixTallyTurn2026!"
-                }
-            ]
+            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
         };
 
         function getOrCreatePC() {
@@ -173,13 +149,7 @@
 
                 if (track.kind === 'video') {
                     const videoElem = document.getElementById('returnVideo');
-                    if (videoElem) {
-                        videoElem.srcObject = stream;
-                        videoElem.play().catch(e => {
-                            console.log("Video play blocked, needs interaction", e);
-                            document.body.addEventListener('click', () => videoElem.play(), { once: true });
-                        });
-                    }
+                    if (videoElem) videoElem.srcObject = stream;
                 } else if (track.kind === 'audio') {
                     // Identifichiamo se è audio del programma (ha anche un video nello stesso stream)
                     // o se è Intercom (solo audio)
@@ -363,22 +333,13 @@
             });
         }
 
-        // Sblocca audio su interazione utente
-        function unlockOperator() {
-            const overlay = document.getElementById('unlockOverlay');
-            if (overlay) overlay.style.display = 'none';
-
+        // Sblocca audio su interazione utente (fallback definitivo)
+        document.body.addEventListener('click', () => {
             const silent = new Audio();
             silent.play().catch(() => { });
-
-            autoInitMic(); // Forza init mic
-            updateLocalVolume(); // Forza aggiornamento volumi
-
-            // Se c'è già un video caricato ma fermo, forzalo
-            const v = document.getElementById('returnVideo');
-            if (v && v.srcObject) v.play().catch(() => { });
-        }
-
+            autoInitMic(); // Riprova init se non era partita
+            updateLocalVolume(); // Assicurati che i volumi siano settati
+        }, { once: true });
         // --- FINE WEBRTC INTERCOM & RITORNO ---
     </script>
 </body>

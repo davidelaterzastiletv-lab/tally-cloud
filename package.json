@@ -1,13 +1,21 @@
 {
-  "name": "vmix-tally-cloud",
+  "name": "vmix-web-tally",
   "version": "1.0.0",
-  "description": "Cloud Relay for vMix Tally",
-  "main": "server.js",
+  "description": "",
+  "main": "index.js",
   "scripts": {
-    "start": "node server.js"
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
   "dependencies": {
-    "express": "^4.18.2",
-    "socket.io": "^4.7.2"
+    "express": "^5.2.1",
+    "fs-extra": "^11.3.3",
+    "node-fetch": "^2.7.0",
+    "selfsigned": "^5.5.0",
+    "socket.io": "^4.8.3",
+    "xml2js": "^0.6.2"
   }
 }
