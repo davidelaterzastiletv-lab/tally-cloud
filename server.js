@@ -14,6 +14,13 @@ try { fetch = globalThis.fetch || require('node-fetch'); } catch (e) { console.w
 const PORT = process.env.PORT || 3000;
 const CONFIG_FILE = path.join(__dirname, 'config.json');
 
+// --- CONFIGURAZIONE AUTOMATICA CLOUD ---
+// Se non siamo su Render, impostiamo l'URL del cloud come predefinito per l'invio dati
+if (!process.env.RENDER && !process.env.REMOTE_SERVER) {
+    process.env.REMOTE_SERVER = 'https://tally-cloud.onrender.com';
+    console.log(`>>> Modalità Bridge Automatica: Invio dati a ${process.env.REMOTE_SERVER}`);
+}
+
 let server;
 const app = express();
 const certPath = path.join(__dirname, 'server.cert');
