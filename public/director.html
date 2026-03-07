@@ -434,9 +434,10 @@
                     if (t.kind === 'video') {
                         const br = parseFloat(document.getElementById('videoBitrate').value) * 1000000;
                         const p = sender.getParameters();
-                        if (!p.encodings) p.encodings = [{}];
-                        p.encodings[0].maxBitrate = br;
-                        sender.setParameters(p);
+                        if (p && p.encodings && p.encodings.length > 0) {
+                            p.encodings[0].maxBitrate = br;
+                            sender.setParameters(p).catch(e => console.warn("Errore bitrate:", e));
+                        }
                     }
                 }
             });
