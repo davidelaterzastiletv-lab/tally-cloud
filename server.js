@@ -166,8 +166,8 @@ server.listen(PORT, () => {
     console.log(`   Indirizzo: ${protocol}://localhost:${PORT}`);
     console.log(`=========================================`);
 
-    // Apre automaticamente la dashboard nel browser se siamo sul PC locale
-    if (!process.env.RENDER) {
+    // Apre automaticamente la dashboard nel browser se siamo sul PC locale e NON in Electron
+    if (!process.env.RENDER && !process.env.ELECTRON_RUNNING) {
         const startCommand = (process.platform == 'darwin' ? 'open' : process.platform == 'win32' ? 'start' : 'xdg-open');
         setTimeout(() => {
             try { 
