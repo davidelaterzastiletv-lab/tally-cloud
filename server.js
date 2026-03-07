@@ -1,23 +1,38 @@
 const express = require('express');
 const https = require('https');
 const socketIo = require('socket.io');
-const fetch = require('node-fetch');
 const path = require('path');
 const xml2js = require('xml2js');
 const fs = require('fs-extra');
 
+// Usa fetch globale (Node 18+) se disponibile, altrimenti usa node-fetch
+const fetch = globalThis.fetch || require('node-fetch');
+
 const PORT = process.env.PORT || 3000;
 const CONFIG_FILE = path.join(__dirname, 'config.json');
 
-// --- INIZIO NUOVA SEZIONE HTTPS ---
-const options = {
-    key: fs.readFileSync(path.join(__dirname, 'server.key')),
-    cert: fs.readFileSync(path.join(__dirname, 'server.cert'))
-};
-// --- FINE NUOVA SEZIONE HTTPS ---
+// --- INIZIO SEZIONE SERVER (HTTPS LOCALE / HTTP CLOUD) ---
+let server;
+const certPath = path.join(__dirname, 'server.cert');
+const keyPath = path.join(__dirname, 'server.key');
 
-const app = express();
-const server = https.createServer(options, app);
+if (fs.existsSync(certPath) && fs.existsSync(keyPath) && !process.env.RENDER) {
+    // Siamo in locale e abbiamo i certificati
+    const options = {
+        key: fs.readFileSync(keyPath),
+        cert: fs.readFileSync(certPath)
+    };
+    const https = require('https');
+    server = https.createServer(options, app);
+    console.log('Avviato in modalità HTTPS (Locale)');
+} else {
+    // Siamo su Render o non abbiamo certificati
+    const http = require('http');
+    server = http.createServer(app);
+    console.log('Avviato in modalità HTTP (Cloud/Standard)');
+}
+// --- FINE SEZIONE SERVER ---
+
 const io = socketIo(server);
 
 let vmixIp = 'localhost:8088';
@@ -75,7 +90,7 @@ app.post('/api/config', (req, res) => {
     if (settings) directorSettings = { ...directorSettings, ...settings };
 
     saveConfig();
-    startPolling();
+    if (!isBridgeActive) startPolling(); // Solo se non siamo sotto comando Bridge
     // Broadcast the update to all connected clients immediately
     io.emit('configUpdate', { cameras, vmixIp, directorSettings });
     res.json({ status: 'ok', vmixIp, cameras, directorSettings });
@@ -158,10 +173,13 @@ async function pollVmix() {
                     connected: isVmixConnected,
                     remoteCameras: cameras 
                 })
-            }).then(() => {
-                // Feedback ogni 5 secondi per non intasare la console
-                if (Date.now() % 5000 < 600) console.log('>>> Segnale inviato al Cloud con successo');
-            }).catch((e) => console.error('!!! Errore invio al Cloud:', e.message));
+            }).then(res => {
+                if (res.ok) {
+                    if (Date.now() % 5000 < 600) console.log('>>> Segnale inviato al Cloud: Ricevuto da Render (OK)');
+                } else {
+                    console.error(`!!! Render ha respinto il segnale (Errore ${res.status}). Assicurati di aver aggiornato il codice su Render!`);
+                }
+            }).catch((e) => console.error('!!! Errore di rete verso il Cloud:', e.message));
         }
     } catch (err) {
         if (isVmixConnected) {
