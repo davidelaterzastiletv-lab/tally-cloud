@@ -187,6 +187,7 @@
         const socket = io();
         let cameras = [];
         let currentStatuses = {};
+        let speakingOperators = new Set(); // Nuovo: tiene traccia di chi sta parlando
 
         socket.on('configUpdate', (data) => {
             cameras = data.cameras;
@@ -255,6 +256,8 @@
 
                 const url = `${window.location.origin}/operator.html?id=${cam.id}`;
                 const status = currentStatuses[cam.id] || 'off';
+                const isTalking = activeIntercomIds.has(cam.id);
+                const isSpeaking = speakingOperators.has(cam.id);
 
                 row.innerHTML = `
                     <div class="status-indicator ${status}"></div>
@@ -263,7 +266,7 @@
                         <span class="cam-input-badge">INPUT ${cam.inputNumber}</span>
                     </div>
                     <div class="row-actions">
-                        <button id="talkBtn-${cam.id}" class="action-icon-btn btn-talk" onclick="toggleTalk(${cam.id})" data-tooltip="Parla con operatore">
+                        <button id="talkBtn-${cam.id}" class="action-icon-btn btn-talk ${isTalking ? 'active' : ''}" onclick="toggleTalk(${cam.id})" data-tooltip="Parla con operatore">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
                         </button>
                         <a href="${url}" target="_blank" class="action-icon-btn" data-tooltip="Apri Link Tally">
@@ -277,6 +280,7 @@
                         </button>
                     </div>
                 `;
+                if (isSpeaking) row.style.boxShadow = 'inset 0 0 10px var(--preview-green)';
                 grid.appendChild(row);
             });
         }
@@ -554,6 +558,9 @@
         socket.on('webrtc-ice', (d) => activePeerConnections[d.from] && activePeerConnections[d.from].addIceCandidate(new RTCIceCandidate(d.candidate)));
         socket.on('intercomStatusUpdate', (d) => {
             const row = document.getElementById(`camera-${d.from}`);
+            if (d.active) speakingOperators.add(d.from);
+            else speakingOperators.delete(d.from);
+
             if (row) row.style.boxShadow = d.active ? 'inset 0 0 10px var(--preview-green)' : 'none';
         });
 
