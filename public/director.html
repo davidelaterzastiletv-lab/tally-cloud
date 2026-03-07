@@ -199,7 +199,12 @@
             // Applica impostazioni memorizzate
             if (data.directorSettings) {
                 const s = data.directorSettings;
-                if (s.videoBitrate) document.getElementById('videoBitrate').value = s.videoBitrate;
+                const bitrateSelect = document.getElementById('videoBitrate');
+                
+                // Sovrascrivi il bitrate solo se non è stato già cambiato dall'utente in questa sessione
+                if (s.videoBitrate && (!window._userChangedBitrate)) {
+                    bitrateSelect.value = s.videoBitrate;
+                }
                 // Le sorgenti verranno applicate dopo che getDevices avrà popolato i select
                 window._pendingSettings = s;
             }
@@ -364,6 +369,14 @@
                 }
             } catch (err) { console.error(err); }
         }
+
+        // Monitor per cambiamenti manuali al bitrate
+        document.addEventListener('DOMContentLoaded', () => {
+             document.getElementById('videoBitrate').addEventListener('change', () => {
+                window._userChangedBitrate = true;
+                console.log("Bitrate cambiato dall'utente, blocco sincronizzazione automatica per questo campo.");
+            });
+        });
 
         async function initAudio() {
             const deviceId = document.getElementById('audioSource').value;
