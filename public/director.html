@@ -421,10 +421,7 @@
             if (activeIntercomIds.has(targetId) && micTrack) {
                 if (!micSender) pc.addTrack(micTrack, currentStream);
             } else if (micSender) {
-                // Invece di rimuovere il track totalmente (che chiude il media stream sul ricevente), 
-                // lo lasciamo o lo gestiamo se vogliamo proprio 'chiudere' il talk.
-                // Per ora rimuoviamo per mantenere la logica esistente ma assicuriamoci di rinegoziare.
-                pc.removeTrack(micSender);
+                try { pc.removeTrack(micSender); } catch(e) {}
             }
 
             const returnTracks = returnStream ? returnStream.getTracks() : [];
@@ -535,14 +532,25 @@
         socket.on('webrtc-offer', async (d) => {
             if (d.from) {
                 const pc = getOrCreatePC(d.from);
-                await pc.setRemoteDescription(new RTCSessionDescription(d.offer));
-                const ans = await pc.createAnswer();
-                await pc.setLocalDescription(ans);
-                socket.emit('webrtc-answer', { target: d.from, answer: ans });
-                syncOperatorTracks(d.from);
+                try {
+                    if (pc.signalingState !== "stable") return; // Evita conflitti di negoziazione
+                    await pc.setRemoteDescription(new RTCSessionDescription(d.offer));
+                    const ans = await pc.createAnswer();
+                    await pc.setLocalDescription(ans);
+                    socket.emit('webrtc-answer', { target: d.from, answer: ans });
+                    syncOperatorTracks(d.from);
+                } catch(e) { console.warn("Errore offerta:", e); }
             }
         });
-        socket.on('webrtc-answer', async (d) => activePeerConnections[d.from] && await activePeerConnections[d.from].setRemoteDescription(new RTCSessionDescription(d.answer)));
+
+        socket.on('webrtc-answer', async (d) => {
+            const pc = activePeerConnections[d.from];
+            if (pc && pc.signalingState === "have-local-offer") {
+                try {
+                    await pc.setRemoteDescription(new RTCSessionDescription(d.answer));
+                } catch(e) { console.warn("Errore risposta:", e); }
+            }
+        });
         socket.on('webrtc-ice', (d) => activePeerConnections[d.from] && activePeerConnections[d.from].addIceCandidate(new RTCIceCandidate(d.candidate)));
         socket.on('intercomStatusUpdate', (d) => {
             const row = document.getElementById(`camera-${d.from}`);
