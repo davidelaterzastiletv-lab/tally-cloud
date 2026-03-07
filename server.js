@@ -158,10 +158,24 @@ io.on('connection', (socket) => {
 });
 
 server.listen(PORT, () => {
-    console.log(`Server attivo su porta ${PORT}`);
+    const isHttps = fs.existsSync(certPath) && fs.existsSync(keyPath) && !process.env.RENDER;
+    const protocol = isHttps ? 'https' : 'http';
+    
+    console.log(`=========================================`);
+    console.log(`   TALLY CLOUD BRIDGE ATTIVO (${protocol.toUpperCase()})`);
+    console.log(`   Indirizzo: ${protocol}://localhost:${PORT}`);
+    console.log(`=========================================`);
+
     // Apre automaticamente la dashboard nel browser se siamo sul PC locale
     if (!process.env.RENDER) {
-        const start = (process.platform == 'darwin' ? 'open' : process.platform == 'win32' ? 'start' : 'xdg-open');
-        try { require('child_process').exec(start + ' http://localhost:' + PORT); } catch (e) {}
+        const startCommand = (process.platform == 'darwin' ? 'open' : process.platform == 'win32' ? 'start' : 'xdg-open');
+        setTimeout(() => {
+            try { 
+                require('child_process').exec(`${startCommand} ${protocol}://localhost:${PORT}`);
+                console.log(">>> Dashboard aperta nel browser.");
+            } catch (e) {
+                console.error("Errore apertura browser:", e.message);
+            }
+        }, 1000);
     }
 });
