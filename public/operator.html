@@ -41,6 +41,15 @@
                 </svg>
                 <span id="volLabel">100%</span>
             </button>
+
+            <!-- Flash Control Button -->
+            <button id="flashBtn" class="btn-talk btn-flash-operator" onclick="toggleFlashlightTally()">
+                <svg id="flashIcon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+                    fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path>
+                </svg>
+                <span id="flashLabel">FLASH</span>
+            </button>
         </div>
     </div>
 
@@ -105,12 +114,21 @@
             }
         }
 
+        let currentTallyStatus = 'safe';
+
         socket.on('tallyUpdate', (tallyStates) => {
             const state = tallyStates.find(s => s.id === camId);
             const view = document.getElementById('operatorView');
             const statusText = document.getElementById('statusText');
 
             if (state) {
+                if (state.status === 'preview' && currentTallyStatus !== 'preview') {
+                    playPreviewBeep();
+                }
+
+                currentTallyStatus = state.status;
+                applyFlashState(state.status);
+
                 view.className = 'operator-view ' + state.status;
 
                 if (state.status === 'program') {
@@ -122,6 +140,88 @@
                 }
             }
         });
+
+        function playPreviewBeep() {
+            try {
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                
+                function playTone(startTime) {
+                    const oscillator = audioCtx.createOscillator();
+                    const gainNode = audioCtx.createGain();
+                    oscillator.type = 'sine';
+                    oscillator.frequency.setValueAtTime(1046, startTime); // C6 Note
+                    gainNode.gain.setValueAtTime(0.08, startTime);
+                    gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.15);
+                    oscillator.connect(gainNode);
+                    gainNode.connect(audioCtx.destination);
+                    oscillator.start(startTime);
+                    oscillator.stop(startTime + 0.15);
+                }
+                
+                const now = audioCtx.currentTime;
+                playTone(now);
+                playTone(now + 0.2); // Secondo beep ritardato
+            } catch (e) { }
+        }
+
+        let flashEnabled = false;
+        let flashTrack = null;
+        let flashBlinkingInterval = null;
+
+        async function toggleFlashlightTally() {
+            const btn = document.getElementById('flashBtn');
+            if (flashEnabled) {
+                flashEnabled = false;
+                btn.classList.remove('active');
+                if (flashBlinkingInterval) { clearInterval(flashBlinkingInterval); flashBlinkingInterval = null; }
+                if (flashTrack) {
+                    await flashTrack.applyConstraints({ advanced: [{ torch: false }] }).catch(()=>{});
+                    flashTrack.stop();
+                    flashTrack = null;
+                }
+            } else {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({
+                        video: { facingMode: 'environment' } // Forza camera posteriore
+                    });
+                    flashTrack = stream.getVideoTracks()[0];
+                    const capabilities = flashTrack.getCapabilities();
+                    if (!capabilities.torch) {
+                        alert("Il flash (Torch) non è supportato o accessibile su questo browser.");
+                        flashTrack.stop();
+                        flashTrack = null;
+                        return;
+                    }
+                    flashEnabled = true;
+                    btn.classList.add('active');
+                    applyFlashState(currentTallyStatus);
+                } catch (err) {
+                    console.error(err);
+                    alert("Permesso fotocamera negato o nessuna fotocamera posteriore accessibile per il flash.");
+                }
+            }
+        }
+
+        function applyFlashState(status) {
+            if (!flashEnabled || !flashTrack) return;
+            
+            if (flashBlinkingInterval) {
+                clearInterval(flashBlinkingInterval);
+                flashBlinkingInterval = null;
+            }
+
+            if (status === 'program') {
+                flashTrack.applyConstraints({ advanced: [{ torch: true }] }).catch(()=>{});
+            } else if (status === 'preview') {
+                let isTorchOn = false;
+                flashBlinkingInterval = setInterval(() => {
+                    isTorchOn = !isTorchOn;
+                    flashTrack.applyConstraints({ advanced: [{ torch: isTorchOn }] }).catch(()=>{});
+                }, 500);
+            } else {
+                flashTrack.applyConstraints({ advanced: [{ torch: false }] }).catch(()=>{});
+            }
+        }
 
         socket.on('error', (msg) => {
             document.getElementById('statusText').textContent = 'VMIX OFFLINE';
