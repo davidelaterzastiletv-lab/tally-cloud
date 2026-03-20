@@ -272,15 +272,11 @@
             }
 
             if (status === 'program') {
-                setTorch(true);
+                setTorch(true); // Sempre acceso e fisso in onda
             } else if (status === 'preview') {
-                let isTorchOn = false;
-                flashBlinkingInterval = setInterval(() => {
-                    isTorchOn = !isTorchOn;
-                    setTorch(isTorchOn);
-                }, 800); // Leggermente più lento perchè lo stop/re-init è lento
+                setTorch(false); // Completamente spento in preview (solo doppio bip)
             } else {
-                setTorch(false);
+                setTorch(false); // Spento a riposo
             }
         }
 
