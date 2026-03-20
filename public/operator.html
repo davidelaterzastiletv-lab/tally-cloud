@@ -181,42 +181,63 @@
                 }
             } else {
                 try {
-                    let stream;
+                    btn.style.opacity = '0.5';
+
                     try {
-                        // Proviamo a forzare la richiesta del torch inizialmente
-                        stream = await navigator.mediaDevices.getUserMedia({
-                            video: { facingMode: 'environment', advanced: [{ torch: false }] }
-                        });
+                        const initStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                        initStream.getTracks().forEach(t => t.stop());
                     } catch (e) {
-                        // Fallback se il browser rifiuta i constraint advanced
-                        stream = await navigator.mediaDevices.getUserMedia({
-                            video: { facingMode: 'environment' }
-                        });
-                    }
-
-                    flashTrack = stream.getVideoTracks()[0];
-
-                    // Su alcuni Android le capabilities non popolano istantaneamente
-                    await new Promise(resolve => setTimeout(resolve, 500));
-
-                    // Effettuiamo un tentativo reale di accensione
-                    try {
-                        await flashTrack.applyConstraints({ advanced: [{ torch: true }] });
-                        await new Promise(resolve => setTimeout(resolve, 100)); // brevisimo test
-                        await flashTrack.applyConstraints({ advanced: [{ torch: false }] });
-                    } catch (testErr) {
-                        alert("Il flash (Torch) non è compatibile col tuo telefono o browser. Dettagli: " + testErr.name);
-                        flashTrack.stop();
-                        flashTrack = null;
+                        btn.style.opacity = '1';
+                        alert("Devi concedere il permesso alla fotocamera prima di usare il flash.");
                         return;
                     }
 
+                    const devices = await navigator.mediaDevices.enumerateDevices();
+                    let videoDevices = devices.filter(d => d.kind === 'videoinput');
+
+                    videoDevices.sort((a, b) => {
+                        const aBack = (a.label.toLowerCase().includes('back') || a.label.toLowerCase().includes('posteriore') || a.label.toLowerCase().includes('environment') || a.label.toLowerCase().includes('facing back')) ? 1 : 0;
+                        const bBack = (b.label.toLowerCase().includes('back') || b.label.toLowerCase().includes('posteriore') || b.label.toLowerCase().includes('environment') || b.label.toLowerCase().includes('facing back')) ? 1 : 0;
+                        return bBack - aBack;
+                    });
+
+                    let foundSupportedTrack = null;
+
+                    for (const device of videoDevices) {
+                        try {
+                            const stream = await navigator.mediaDevices.getUserMedia({
+                                video: { deviceId: { exact: device.deviceId } }
+                            });
+                            const track = stream.getVideoTracks()[0];
+
+                            try {
+                                await new Promise(r => setTimeout(r, 200));
+                                await track.applyConstraints({ advanced: [{ torch: true }] });
+                                await track.applyConstraints({ advanced: [{ torch: false }] });
+
+                                foundSupportedTrack = track;
+                                break;
+                            } catch (testErr) {
+                                track.stop();
+                            }
+                        } catch (err) { }
+                    }
+
+                    btn.style.opacity = '1';
+
+                    if (!foundSupportedTrack) {
+                        alert("Nessuna delle tue telecamere posteriori permette a Chrome di accendere il flash. Purtroppo il modello del telefono o la versione Android blocca questa funzionalità via Web.");
+                        return;
+                    }
+
+                    flashTrack = foundSupportedTrack;
                     flashEnabled = true;
                     btn.classList.add('active');
                     applyFlashState(currentTallyStatus);
                 } catch (err) {
                     console.error(err);
-                    alert("Permesso fotocamera negato o nessuna fotocamera posteriore. " + err.message);
+                    btn.style.opacity = '1';
+                    alert("Errore imprevisto fotocamera: " + err.message);
                 }
             }
         }
