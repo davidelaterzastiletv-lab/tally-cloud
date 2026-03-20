@@ -166,6 +166,7 @@
 
         let flashEnabled = false;
         let flashTrack = null;
+        let flashDeviceId = null;
         let flashBlinkingInterval = null;
 
         async function toggleFlashlightTally() {
@@ -226,11 +227,12 @@
                     btn.style.opacity = '1';
 
                     if (!foundSupportedTrack) {
-                        alert("Nessuna delle tue telecamere posteriori permette a Chrome di accendere il flash. Purtroppo il modello del telefono o la versione Android blocca questa funzionalità via Web.");
+                        alert("Nessuna delle tue telecamere posteriori accetta il comando di flash (OverconstrainedError).");
                         return;
                     }
 
                     flashTrack = foundSupportedTrack;
+                    flashDeviceId = foundSupportedTrack.getSettings().deviceId; // conserviamo il deviceId esatto
                     flashEnabled = true;
                     btn.classList.add('active');
                     applyFlashState(currentTallyStatus);
@@ -239,6 +241,25 @@
                     btn.style.opacity = '1';
                     alert("Errore imprevisto fotocamera: " + err.message);
                 }
+            }
+        }
+
+        async function setTorch(on) {
+            if (!flashTrack || !flashEnabled) return;
+            try {
+                // Tenta il comando classico prima
+                await flashTrack.applyConstraints({ advanced: [{ torch: on }] });
+            } catch (e) { }
+
+            // Fix esplicito per Android se torch:false non fa spegnere la luce a livello hardware
+            if (!on && flashDeviceId) {
+                flashTrack.stop(); // L unico modo per spegnere la luce davvero su questi device buggati
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({
+                        video: { deviceId: { exact: flashDeviceId } }
+                    });
+                    flashTrack = stream.getVideoTracks()[0];
+                } catch (e) { }
             }
         }
 
@@ -251,15 +272,15 @@
             }
 
             if (status === 'program') {
-                flashTrack.applyConstraints({ advanced: [{ torch: true }] }).catch(() => { });
+                setTorch(true);
             } else if (status === 'preview') {
                 let isTorchOn = false;
                 flashBlinkingInterval = setInterval(() => {
                     isTorchOn = !isTorchOn;
-                    flashTrack.applyConstraints({ advanced: [{ torch: isTorchOn }] }).catch(() => { });
-                }, 500);
+                    setTorch(isTorchOn);
+                }, 800); // Leggermente più lento perchè lo stop/re-init è lento
             } else {
-                flashTrack.applyConstraints({ advanced: [{ torch: false }] }).catch(() => { });
+                setTorch(false);
             }
         }
 
