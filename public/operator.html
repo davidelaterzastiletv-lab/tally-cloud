@@ -144,7 +144,7 @@
         function playPreviewBeep() {
             try {
                 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                
+
                 function playTone(startTime) {
                     const oscillator = audioCtx.createOscillator();
                     const gainNode = audioCtx.createGain();
@@ -157,7 +157,7 @@
                     oscillator.start(startTime);
                     oscillator.stop(startTime + 0.15);
                 }
-                
+
                 const now = audioCtx.currentTime;
                 playTone(now);
                 playTone(now + 0.2); // Secondo beep ritardato
@@ -175,51 +175,70 @@
                 btn.classList.remove('active');
                 if (flashBlinkingInterval) { clearInterval(flashBlinkingInterval); flashBlinkingInterval = null; }
                 if (flashTrack) {
-                    await flashTrack.applyConstraints({ advanced: [{ torch: false }] }).catch(()=>{});
+                    await flashTrack.applyConstraints({ advanced: [{ torch: false }] }).catch(() => { });
                     flashTrack.stop();
                     flashTrack = null;
                 }
             } else {
                 try {
-                    const stream = await navigator.mediaDevices.getUserMedia({
-                        video: { facingMode: 'environment' } // Forza camera posteriore
-                    });
+                    let stream;
+                    try {
+                        // Proviamo a forzare la richiesta del torch inizialmente
+                        stream = await navigator.mediaDevices.getUserMedia({
+                            video: { facingMode: 'environment', advanced: [{ torch: false }] }
+                        });
+                    } catch (e) {
+                        // Fallback se il browser rifiuta i constraint advanced
+                        stream = await navigator.mediaDevices.getUserMedia({
+                            video: { facingMode: 'environment' }
+                        });
+                    }
+
                     flashTrack = stream.getVideoTracks()[0];
-                    const capabilities = flashTrack.getCapabilities();
-                    if (!capabilities.torch) {
-                        alert("Il flash (Torch) non è supportato o accessibile su questo browser.");
+
+                    // Su alcuni Android le capabilities non popolano istantaneamente
+                    await new Promise(resolve => setTimeout(resolve, 500));
+
+                    // Effettuiamo un tentativo reale di accensione
+                    try {
+                        await flashTrack.applyConstraints({ advanced: [{ torch: true }] });
+                        await new Promise(resolve => setTimeout(resolve, 100)); // brevisimo test
+                        await flashTrack.applyConstraints({ advanced: [{ torch: false }] });
+                    } catch (testErr) {
+                        alert("Il flash (Torch) non è compatibile col tuo telefono o browser. Dettagli: " + testErr.name);
                         flashTrack.stop();
                         flashTrack = null;
                         return;
                     }
+
                     flashEnabled = true;
                     btn.classList.add('active');
                     applyFlashState(currentTallyStatus);
                 } catch (err) {
                     console.error(err);
-                    alert("Permesso fotocamera negato o nessuna fotocamera posteriore accessibile per il flash.");
+                    alert("Permesso fotocamera negato o nessuna fotocamera posteriore. " + err.message);
                 }
             }
         }
 
         function applyFlashState(status) {
             if (!flashEnabled || !flashTrack) return;
-            
+
             if (flashBlinkingInterval) {
                 clearInterval(flashBlinkingInterval);
                 flashBlinkingInterval = null;
             }
 
             if (status === 'program') {
-                flashTrack.applyConstraints({ advanced: [{ torch: true }] }).catch(()=>{});
+                flashTrack.applyConstraints({ advanced: [{ torch: true }] }).catch(() => { });
             } else if (status === 'preview') {
                 let isTorchOn = false;
                 flashBlinkingInterval = setInterval(() => {
                     isTorchOn = !isTorchOn;
-                    flashTrack.applyConstraints({ advanced: [{ torch: isTorchOn }] }).catch(()=>{});
+                    flashTrack.applyConstraints({ advanced: [{ torch: isTorchOn }] }).catch(() => { });
                 }, 500);
             } else {
-                flashTrack.applyConstraints({ advanced: [{ torch: false }] }).catch(()=>{});
+                flashTrack.applyConstraints({ advanced: [{ torch: false }] }).catch(() => { });
             }
         }
 
